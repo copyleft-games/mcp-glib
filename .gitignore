@@ -1,0 +1,34 @@
+# Build directory
+build/
+
+# Object files
+*.o
+
+# Dependency files
+*.d
+
+# Libraries
+*.so
+*.so.*
+*.a
+
+# GObject Introspection
+*.gir
+*.typelib
+
+# pkg-config generated
+*.pc
+
+# Editor files
+*~
+*.swp
+*.swo
+.*.swp
+
+# Core dumps
+core
+core.*
+
+# Backup files
+*.bak
+*.orig
