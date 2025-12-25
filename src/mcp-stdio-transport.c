@@ -44,6 +44,10 @@ struct _McpStdioTransport
 
     /* Whether we own the streams (subprocess case) */
     gboolean owns_streams;
+
+    /* Write queue to handle sequential async writes */
+    GQueue *write_queue;
+    gboolean write_in_progress;
 };
 
 static void mcp_stdio_transport_iface_init (McpTransportInterface *iface);
@@ -70,6 +74,7 @@ static void start_read_loop (McpStdioTransport *self);
 static void read_line_cb    (GObject      *source,
                              GAsyncResult *result,
                              gpointer      user_data);
+static gboolean start_read_loop_idle (gpointer user_data);
 
 /*
  * Set state and emit signal.
@@ -88,6 +93,29 @@ set_state (McpStdioTransport *self,
     }
 }
 
+/*
+ * WriteQueueEntry - entry in the write queue
+ */
+typedef struct
+{
+    GTask *task;
+    gchar *line;
+    gsize  len;
+} WriteQueueEntry;
+
+static void
+write_queue_entry_free (WriteQueueEntry *entry)
+{
+    if (entry != NULL)
+    {
+        g_clear_object (&entry->task);
+        g_free (entry->line);
+        g_free (entry);
+    }
+}
+
+static void process_write_queue (McpStdioTransport *self);
+
 static void
 mcp_stdio_transport_dispose (GObject *object)
 {
@@ -98,6 +126,25 @@ mcp_stdio_transport_dispose (GObject *object)
     {
         g_cancellable_cancel (self->read_cancellable);
         g_clear_object (&self->read_cancellable);
+    }
+
+    /* Clear write queue */
+    if (self->write_queue != NULL)
+    {
+        WriteQueueEntry *entry;
+        while ((entry = g_queue_pop_head (self->write_queue)) != NULL)
+        {
+            if (entry->task != NULL)
+            {
+                g_task_return_new_error (entry->task,
+                                         MCP_ERROR,
+                                         MCP_ERROR_CONNECTION_CLOSED,
+                                         "Transport disposed");
+            }
+            write_queue_entry_free (entry);
+        }
+        g_queue_free (self->write_queue);
+        self->write_queue = NULL;
     }
 
     g_clear_object (&self->data_input);
@@ -197,6 +244,8 @@ static void
 mcp_stdio_transport_init (McpStdioTransport *self)
 {
     self->state = MCP_TRANSPORT_STATE_DISCONNECTED;
+    self->write_queue = g_queue_new ();
+    self->write_in_progress = FALSE;
 }
 
 /*
@@ -250,11 +299,14 @@ stdio_transport_connect_async (McpTransport        *transport,
     /* Create cancellable for read loop */
     self->read_cancellable = g_cancellable_new ();
 
-    /* Start the read loop */
-    start_read_loop (self);
-
+    /* Set state to connected */
     set_state (self, MCP_TRANSPORT_STATE_CONNECTED);
+
     g_task_return_boolean (task, TRUE);
+
+    /* Schedule the read loop to start in an idle callback so the
+     * connect callback can complete first */
+    g_idle_add (start_read_loop_idle, g_object_ref (self));
 }
 
 static gboolean
@@ -329,39 +381,86 @@ stdio_transport_disconnect_finish (McpTransport  *transport,
 }
 
 /*
- * Data structure for async write operation.
+ * write_message_cb:
+ *
+ * Callback for async write completion. Completes the current task
+ * and processes the next item in the write queue.
  */
-typedef struct
-{
-    gchar *line;
-    gsize  len;
-} WriteData;
-
-static void
-write_data_free (gpointer data)
-{
-    WriteData *wd = data;
-    g_free (wd->line);
-    g_free (wd);
-}
-
 static void
 write_message_cb (GObject      *source,
                   GAsyncResult *result,
                   gpointer      user_data)
 {
-    GOutputStream *output = G_OUTPUT_STREAM (source);
-    g_autoptr(GTask) task = G_TASK (user_data);
+    McpStdioTransport *self = MCP_STDIO_TRANSPORT (user_data);
+    WriteQueueEntry *entry;
     GError *error = NULL;
     gsize bytes_written;
 
-    if (!g_output_stream_write_all_finish (output, result, &bytes_written, &error))
+    /* Pop the entry we just wrote */
+    entry = g_queue_pop_head (self->write_queue);
+    g_return_if_fail (entry != NULL);
+
+    if (!g_output_stream_write_all_finish (G_OUTPUT_STREAM (source), result,
+                                            &bytes_written, &error))
     {
-        g_task_return_error (task, error);
+        if (entry->task != NULL)
+        {
+            g_task_return_error (entry->task, error);
+        }
+        else
+        {
+            g_error_free (error);
+        }
+    }
+    else
+    {
+        if (entry->task != NULL)
+        {
+            g_task_return_boolean (entry->task, TRUE);
+        }
+    }
+
+    write_queue_entry_free (entry);
+
+    /* Mark write as complete and process next in queue */
+    self->write_in_progress = FALSE;
+    process_write_queue (self);
+}
+
+/*
+ * process_write_queue:
+ *
+ * Processes the next item in the write queue if no write is in progress.
+ */
+static void
+process_write_queue (McpStdioTransport *self)
+{
+    WriteQueueEntry *entry;
+
+    if (self->write_in_progress)
+    {
         return;
     }
 
-    g_task_return_boolean (task, TRUE);
+    if (self->state != MCP_TRANSPORT_STATE_CONNECTED)
+    {
+        return;
+    }
+
+    entry = g_queue_peek_head (self->write_queue);
+    if (entry == NULL)
+    {
+        return;
+    }
+
+    self->write_in_progress = TRUE;
+    g_output_stream_write_all_async (self->output,
+                                     entry->line,
+                                     entry->len,
+                                     G_PRIORITY_DEFAULT,
+                                     NULL,
+                                     write_message_cb,
+                                     self);
 }
 
 static void
@@ -375,7 +474,7 @@ stdio_transport_send_message_async (McpTransport        *transport,
     GTask *task;
     g_autoptr(JsonGenerator) generator = NULL;
     g_autofree gchar *json_str = NULL;
-    WriteData *wd;
+    WriteQueueEntry *entry;
 
     task = g_task_new (self, cancellable, callback, user_data);
     g_task_set_source_tag (task, stdio_transport_send_message_async);
@@ -395,22 +494,15 @@ stdio_transport_send_message_async (McpTransport        *transport,
     json_generator_set_root (generator, message);
     json_str = json_generator_to_data (generator, NULL);
 
-    /* Prepare write data with newline for NDJSON framing */
-    wd = g_new0 (WriteData, 1);
-    wd->line = g_strdup_printf ("%s\n", json_str);
-    wd->len = strlen (wd->line);
+    /* Create queue entry */
+    entry = g_new0 (WriteQueueEntry, 1);
+    entry->task = task;  /* Takes ownership */
+    entry->line = g_strdup_printf ("%s\n", json_str);
+    entry->len = strlen (entry->line);
 
-    /* Attach data to task so it stays alive during async operation */
-    g_task_set_task_data (task, wd, write_data_free);
-
-    /* Write asynchronously */
-    g_output_stream_write_all_async (self->output,
-                                     wd->line,
-                                     wd->len,
-                                     G_PRIORITY_DEFAULT,
-                                     cancellable,
-                                     write_message_cb,
-                                     task);
+    /* Add to queue and process */
+    g_queue_push_tail (self->write_queue, entry);
+    process_write_queue (self);
 }
 
 static gboolean
@@ -541,6 +633,21 @@ start_read_loop (McpStdioTransport *self)
 }
 
 /*
+ * Idle callback to start the read loop.
+ * This is used to defer the read loop start until after connect completes.
+ */
+static gboolean
+start_read_loop_idle (gpointer user_data)
+{
+    McpStdioTransport *self = MCP_STDIO_TRANSPORT (user_data);
+
+    start_read_loop (self);
+    g_object_unref (self);
+
+    return G_SOURCE_REMOVE;
+}
+
+/*
  * Public constructors.
  */
 
@@ -615,6 +722,14 @@ mcp_stdio_transport_new_subprocess (const gchar * const *command,
     launcher = g_subprocess_launcher_new (G_SUBPROCESS_FLAGS_STDIN_PIPE |
                                           G_SUBPROCESS_FLAGS_STDOUT_PIPE |
                                           G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+
+    /*
+     * Unset G_MESSAGES_DEBUG in the subprocess environment.
+     * When this variable is set, GLib's structured logging can cause
+     * debug messages to be written to stdout, which would corrupt
+     * the JSON-RPC protocol stream.
+     */
+    g_subprocess_launcher_unsetenv (launcher, "G_MESSAGES_DEBUG");
 
     subprocess = g_subprocess_launcher_spawnv (launcher, command, error);
     if (subprocess == NULL)

@@ -210,6 +210,54 @@ mcp_message_parse (const gchar  *json_str,
     return mcp_message_new_from_json (root, error);
 }
 
+/*
+ * get_id_as_string:
+ * @obj: a #JsonObject
+ *
+ * Extracts the "id" member from a JSON object as a string.
+ * JSON-RPC 2.0 allows id to be a string, number, or null.
+ * This function handles all cases and returns a string representation.
+ *
+ * Returns: (transfer full) (nullable): the id as a string, or %NULL if not present
+ */
+static gchar *
+get_id_as_string (JsonObject *obj)
+{
+    JsonNode *id_node;
+
+    if (!json_object_has_member (obj, "id"))
+    {
+        return NULL;
+    }
+
+    id_node = json_object_get_member (obj, "id");
+    if (id_node == NULL || JSON_NODE_HOLDS_NULL (id_node))
+    {
+        return NULL;
+    }
+
+    if (JSON_NODE_HOLDS_VALUE (id_node))
+    {
+        GType value_type;
+
+        value_type = json_node_get_value_type (id_node);
+        if (value_type == G_TYPE_STRING)
+        {
+            return g_strdup (json_node_get_string (id_node));
+        }
+        else if (value_type == G_TYPE_INT64)
+        {
+            return g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (id_node));
+        }
+        else if (value_type == G_TYPE_DOUBLE)
+        {
+            return g_strdup_printf ("%g", json_node_get_double (id_node));
+        }
+    }
+
+    return NULL;
+}
+
 /**
  * mcp_message_new_from_json:
  * @node: a #JsonNode containing a message
@@ -278,12 +326,12 @@ mcp_message_new_from_json (JsonNode  *node,
     {
         /* Request */
         const gchar *method;
-        const gchar *id;
+        g_autofree gchar *id = NULL;
         JsonNode *params_node;
         McpRequest *request;
 
         method = json_object_get_string_member (obj, "method");
-        id = json_object_get_string_member (obj, "id");
+        id = get_id_as_string (obj);
 
         params_node = json_object_has_member (obj, "params") ?
                       json_object_get_member (obj, "params") : NULL;
@@ -324,11 +372,11 @@ mcp_message_new_from_json (JsonNode  *node,
     else if (has_result && has_id)
     {
         /* Success Response */
-        const gchar *id;
+        g_autofree gchar *id = NULL;
         JsonNode *result_node;
         McpResponse *response;
 
-        id = json_object_get_string_member (obj, "id");
+        id = get_id_as_string (obj);
         result_node = json_object_get_member (obj, "result");
 
         response = mcp_response_new (id, json_node_copy (result_node));
@@ -338,14 +386,14 @@ mcp_message_new_from_json (JsonNode  *node,
     else if (has_error && has_id)
     {
         /* Error Response */
-        const gchar *id;
+        g_autofree gchar *id = NULL;
         JsonObject *error_obj;
         gint code;
         const gchar *message;
         JsonNode *data_node;
         McpErrorResponse *err_response;
 
-        id = json_object_get_string_member (obj, "id");
+        id = get_id_as_string (obj);
         error_obj = json_object_get_object_member (obj, "error");
 
         if (error_obj == NULL ||

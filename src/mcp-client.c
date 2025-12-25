@@ -1146,6 +1146,34 @@ on_transport_error (McpTransport *transport,
 
 /* Response handling */
 
+/*
+ * on_initialized_notification_sent:
+ *
+ * Callback called after the notifications/initialized message has been sent.
+ * We complete the connect_task here to ensure the client doesn't try to send
+ * another message while the output stream still has an outstanding write.
+ */
+static void
+on_initialized_notification_sent (GObject      *source,
+                                   GAsyncResult *result,
+                                   gpointer      user_data)
+{
+    McpClient *self = MCP_CLIENT (user_data);
+    g_autoptr(GError) error = NULL;
+
+    if (!mcp_transport_send_message_finish (MCP_TRANSPORT (source), result, &error))
+    {
+        g_warning ("Failed to send initialized notification: %s", error->message);
+    }
+
+    /* Now that the send is complete, we can safely complete the connect task */
+    if (self->connect_task != NULL)
+    {
+        g_task_return_boolean (self->connect_task, TRUE);
+        g_clear_object (&self->connect_task);
+    }
+}
+
 static void
 handle_initialize_response (McpClient   *self,
                             McpResponse *response)
@@ -1209,23 +1237,22 @@ handle_initialize_response (McpClient   *self,
         mcp_session_set_protocol_version (MCP_SESSION (self), version);
     }
 
-    /* Send initialized notification */
+    /* Now ready */
+    mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_READY);
+
+    /*
+     * Send initialized notification. The connect_task will be completed
+     * in the callback after the send finishes, to avoid the client trying
+     * to send another message while this one is still in flight.
+     */
     {
         g_autoptr(McpNotification) notif = NULL;
         g_autoptr(JsonNode) node = NULL;
 
         notif = mcp_notification_new ("notifications/initialized");
         node = mcp_message_to_json (MCP_MESSAGE (notif));
-        mcp_transport_send_message_async (self->transport, node, NULL, NULL, NULL);
-    }
-
-    /* Now ready */
-    mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_READY);
-
-    if (self->connect_task != NULL)
-    {
-        g_task_return_boolean (self->connect_task, TRUE);
-        g_clear_object (&self->connect_task);
+        mcp_transport_send_message_async (self->transport, node, NULL,
+                                          on_initialized_notification_sent, self);
     }
 }
 

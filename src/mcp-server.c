@@ -116,6 +116,8 @@ enum
     SIGNAL_TOOL_CALLED,
     SIGNAL_RESOURCE_READ,
     SIGNAL_PROMPT_REQUESTED,
+    SIGNAL_CLIENT_INITIALIZED,
+    SIGNAL_CLIENT_DISCONNECTED,
     N_SIGNALS
 };
 
@@ -371,6 +373,32 @@ mcp_server_class_init (McpServerClass *klass)
                       0, NULL, NULL, NULL,
                       G_TYPE_NONE, 2,
                       G_TYPE_STRING, G_TYPE_HASH_TABLE);
+
+    /**
+     * McpServer::client-initialized:
+     * @self: the #McpServer
+     *
+     * Emitted when a client has completed initialization.
+     */
+    signals[SIGNAL_CLIENT_INITIALIZED] =
+        g_signal_new ("client-initialized",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      0, NULL, NULL, NULL,
+                      G_TYPE_NONE, 0);
+
+    /**
+     * McpServer::client-disconnected:
+     * @self: the #McpServer
+     *
+     * Emitted when the client disconnects.
+     */
+    signals[SIGNAL_CLIENT_DISCONNECTED] =
+        g_signal_new ("client-disconnected",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      0, NULL, NULL, NULL,
+                      G_TYPE_NONE, 0);
 }
 
 static void
@@ -1055,6 +1083,7 @@ on_state_changed (McpTransport      *transport,
     if (new_state == MCP_TRANSPORT_STATE_DISCONNECTED)
     {
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_DISCONNECTED);
+        g_signal_emit (self, signals[SIGNAL_CLIENT_DISCONNECTED], 0);
         if (self->main_loop != NULL)
         {
             g_main_loop_quit (self->main_loop);
@@ -1820,6 +1849,7 @@ handle_notification (McpServer       *self,
     {
         /* Client has acknowledged initialization */
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_READY);
+        g_signal_emit (self, signals[SIGNAL_CLIENT_INITIALIZED], 0);
 
         if (self->start_task != NULL)
         {
