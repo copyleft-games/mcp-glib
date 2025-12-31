@@ -15,15 +15,12 @@
 #ifndef MCP_SESSION_H
 #define MCP_SESSION_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <json-glib/json-glib.h>
-#include <mcp/mcp-enums.h>
-#include <mcp/mcp-capabilities.h>
-#include <mcp/mcp-message.h>
+#include "mcp-enums.h"
+#include "mcp-capabilities.h"
+#include "mcp-message.h"
 
 G_BEGIN_DECLS
 

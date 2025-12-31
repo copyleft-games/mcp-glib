@@ -11,7 +11,6 @@ LICENSE     := AGPLv3
 
 # Directories
 SRCDIR      := src
-INCDIR      := mcp
 BUILDDIR    := build
 TESTDIR     := tests
 EXAMPLESDIR := examples
@@ -21,7 +20,7 @@ CC          := gcc
 CSTD        := -std=gnu89
 WARNINGS    := -Wall -Wextra -Wno-unused-parameter
 DEBUG       := -g -O0
-CFLAGS      := $(CSTD) $(WARNINGS) $(DEBUG) -fPIC -I.
+CFLAGS      := $(CSTD) $(WARNINGS) $(DEBUG) -fPIC -I./$(SRCDIR)
 
 # Dependencies via pkg-config
 PKG_DEPS    := glib-2.0 gobject-2.0 gio-2.0 gio-unix-2.0 json-glib-1.0 libsoup-3.0 libdex-1
@@ -45,7 +44,7 @@ OBJS        := $(SRCS:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)
 DEPS        := $(OBJS:.o=.d)
 
 # Headers
-HDRS        := $(wildcard $(INCDIR)/*.h)
+HDRS        := $(wildcard $(SRCDIR)/*.h)
 
 # Tests
 TEST_SRCS   := $(wildcard $(TESTDIR)/*.c)
@@ -132,8 +131,7 @@ $(BUILDDIR)/$(GIR_FILE): $(BUILDDIR)/$(LIB_SO) $(HDRS) $(SRCS)
 		--pkg=libdex-1 \
 		--output=$@ \
 		--warn-all \
-		--cflags-begin -DMCP_COMPILATION --cflags-end \
-		-I. \
+		-I./$(SRCDIR) \
 		$(HDRS) $(SRCS)
 
 $(BUILDDIR)/$(TYPELIB): $(BUILDDIR)/$(GIR_FILE)

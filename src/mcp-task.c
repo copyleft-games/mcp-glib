@@ -6,9 +6,7 @@
  *
  * This implements the experimental Tasks API from MCP specification.
  */
-
-#define MCP_COMPILATION
-#include <mcp/mcp.h>
+#include "mcp.h"
 
 typedef struct
 {

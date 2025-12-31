@@ -6,7 +6,7 @@
  */
 
 #include <glib.h>
-#include <mcp/mcp.h>
+#include "mcp.h"
 
 /*
  * Test that McpTransportState enum is registered and has correct values

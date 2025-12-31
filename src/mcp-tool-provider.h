@@ -11,14 +11,11 @@
 #ifndef MCP_TOOL_PROVIDER_H
 #define MCP_TOOL_PROVIDER_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
-#include <mcp/mcp-tool.h>
+#include "mcp-tool.h"
 
 G_BEGIN_DECLS
 

@@ -11,14 +11,11 @@
 #ifndef MCP_RESOURCE_PROVIDER_H
 #define MCP_RESOURCE_PROVIDER_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
-#include <mcp/mcp-resource.h>
+#include "mcp-resource.h"
 
 G_BEGIN_DECLS
 

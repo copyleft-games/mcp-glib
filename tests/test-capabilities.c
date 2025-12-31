@@ -6,7 +6,7 @@
  */
 
 #include <glib.h>
-#include <mcp/mcp.h>
+#include "mcp.h"
 
 /* ========================================================================== */
 /* McpImplementation Tests                                                    */

@@ -8,9 +8,6 @@
 #ifndef MCP_RESOURCE_H
 #define MCP_RESOURCE_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <json-glib/json-glib.h>

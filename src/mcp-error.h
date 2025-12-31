@@ -8,9 +8,6 @@
 #ifndef MCP_ERROR_H
 #define MCP_ERROR_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib.h>
 

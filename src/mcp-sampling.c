@@ -4,9 +4,7 @@
  * Copyright (C) 2025 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-
-#define MCP_COMPILATION
-#include <mcp/mcp.h>
+#include "mcp.h"
 
 /* ========================================================================== */
 /* McpSamplingMessage                                                         */

@@ -6,9 +6,9 @@
  */
 
 #define MCP_COMPILATION
-#include <mcp/mcp-transport.h>
-#include <mcp/mcp-stdio-transport.h>
-#include <mcp/mcp-error.h>
+#include "mcp-transport.h"
+#include "mcp-stdio-transport.h"
+#include "mcp-error.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */

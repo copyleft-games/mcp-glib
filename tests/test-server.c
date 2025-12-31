@@ -6,7 +6,7 @@
  */
 
 #define MCP_COMPILATION
-#include <mcp/mcp.h>
+#include "mcp.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */

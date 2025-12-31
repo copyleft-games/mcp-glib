@@ -4,10 +4,8 @@
  * Copyright (C) 2025 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-
-#define MCP_COMPILATION
-#include <mcp/mcp-capabilities.h>
-#include <mcp/mcp-error.h>
+#include "mcp-capabilities.h"
+#include "mcp-error.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */
@@ -333,8 +331,6 @@ mcp_implementation_new_from_json (JsonNode  *node,
 
     return impl;
 }
-
-
 /* ========================================================================== */
 /* McpServerCapabilities                                                      */
 /* ========================================================================== */
@@ -806,8 +802,6 @@ mcp_server_capabilities_new_from_json (JsonNode  *node,
 
     return caps;
 }
-
-
 /* ========================================================================== */
 /* McpClientCapabilities                                                      */
 /* ========================================================================== */

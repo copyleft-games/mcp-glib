@@ -15,7 +15,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-#include <mcp/mcp.h>
+#include "mcp.h"
 
 static GMainLoop *main_loop = NULL;
 

@@ -33,55 +33,51 @@
 
 G_BEGIN_DECLS
 
-#define MCP_INSIDE
-
 /* Version information */
-#include <mcp/mcp-version.h>
+#include "mcp-version.h"
 
 /* Enumerations */
-#include <mcp/mcp-enums.h>
+#include "mcp-enums.h"
 
 /* Error handling */
-#include <mcp/mcp-error.h>
+#include "mcp-error.h"
 
 /* Entity types */
-#include <mcp/mcp-tool.h>
-#include <mcp/mcp-resource.h>
-#include <mcp/mcp-prompt.h>
-#include <mcp/mcp-task.h>
+#include "mcp-tool.h"
+#include "mcp-resource.h"
+#include "mcp-prompt.h"
+#include "mcp-task.h"
 
 /* Sampling types */
-#include <mcp/mcp-sampling.h>
+#include "mcp-sampling.h"
 
 /* Root type */
-#include <mcp/mcp-root.h>
+#include "mcp-root.h"
 
 /* Completion types */
-#include <mcp/mcp-completion.h>
+#include "mcp-completion.h"
 
 /* Message types */
-#include <mcp/mcp-message.h>
+#include "mcp-message.h"
 
 /* Capabilities and Session */
-#include <mcp/mcp-capabilities.h>
-#include <mcp/mcp-session.h>
+#include "mcp-capabilities.h"
+#include "mcp-session.h"
 
 /* Transport */
-#include <mcp/mcp-transport.h>
-#include <mcp/mcp-stdio-transport.h>
-#include <mcp/mcp-http-transport.h>
-#include <mcp/mcp-websocket-transport.h>
+#include "mcp-transport.h"
+#include "mcp-stdio-transport.h"
+#include "mcp-http-transport.h"
+#include "mcp-websocket-transport.h"
 
 /* Provider interfaces */
-#include <mcp/mcp-tool-provider.h>
-#include <mcp/mcp-resource-provider.h>
-#include <mcp/mcp-prompt-provider.h>
+#include "mcp-tool-provider.h"
+#include "mcp-resource-provider.h"
+#include "mcp-prompt-provider.h"
 
 /* Server and Client */
-#include <mcp/mcp-server.h>
-#include <mcp/mcp-client.h>
-
-#undef MCP_INSIDE
+#include "mcp-server.h"
+#include "mcp-client.h"
 
 G_END_DECLS
 

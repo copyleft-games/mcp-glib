@@ -11,15 +11,12 @@
 #ifndef MCP_PROMPT_PROVIDER_H
 #define MCP_PROMPT_PROVIDER_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
-#include <mcp/mcp-enums.h>
-#include <mcp/mcp-prompt.h>
+#include "mcp-enums.h"
+#include "mcp-prompt.h"
 
 G_BEGIN_DECLS
 

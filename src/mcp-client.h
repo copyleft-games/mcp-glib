@@ -15,27 +15,24 @@
 #ifndef MCP_CLIENT_H
 #define MCP_CLIENT_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 #include <glib-object.h>
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
 
-#include <mcp/mcp-transport.h>
-#include <mcp/mcp-session.h>
-#include <mcp/mcp-capabilities.h>
-#include <mcp/mcp-tool.h>
-#include <mcp/mcp-resource.h>
-#include <mcp/mcp-prompt.h>
-#include <mcp/mcp-task.h>
-#include <mcp/mcp-tool-provider.h>
-#include <mcp/mcp-resource-provider.h>
-#include <mcp/mcp-prompt-provider.h>
-#include <mcp/mcp-sampling.h>
-#include <mcp/mcp-root.h>
-#include <mcp/mcp-completion.h>
+#include "mcp-transport.h"
+#include "mcp-session.h"
+#include "mcp-capabilities.h"
+#include "mcp-tool.h"
+#include "mcp-resource.h"
+#include "mcp-prompt.h"
+#include "mcp-task.h"
+#include "mcp-tool-provider.h"
+#include "mcp-resource-provider.h"
+#include "mcp-prompt-provider.h"
+#include "mcp-sampling.h"
+#include "mcp-root.h"
+#include "mcp-completion.h"
 
 G_BEGIN_DECLS
 

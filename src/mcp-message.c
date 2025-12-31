@@ -4,11 +4,9 @@
  * Copyright (C) 2025 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-
-#define MCP_COMPILATION
-#include <mcp/mcp-message.h>
-#include <mcp/mcp-enums.h>
-#include <mcp/mcp-error.h>
+#include "mcp-message.h"
+#include "mcp-enums.h"
+#include "mcp-error.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */
@@ -470,8 +468,6 @@ mcp_message_new_from_json (JsonNode  *node,
                  "Cannot determine message type from JSON structure");
     return NULL;
 }
-
-
 /* ========================================================================== */
 /* McpRequest                                                                 */
 /* ========================================================================== */
@@ -788,8 +784,6 @@ mcp_request_set_params (McpRequest *self,
     g_clear_pointer (&self->params, json_node_unref);
     self->params = params;
 }
-
-
 /* ========================================================================== */
 /* McpResponse                                                                */
 /* ========================================================================== */
@@ -1021,8 +1015,6 @@ mcp_response_get_result (McpResponse *self)
 
     return self->result;
 }
-
-
 /* ========================================================================== */
 /* McpErrorResponse                                                           */
 /* ========================================================================== */
@@ -1453,8 +1445,6 @@ mcp_error_response_to_gerror (McpErrorResponse *self)
                         "%s",
                         self->message);
 }
-
-
 /* ========================================================================== */
 /* McpNotification                                                            */
 /* ========================================================================== */

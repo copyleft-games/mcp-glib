@@ -4,13 +4,11 @@
  * Copyright (C) 2025 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-
-#define MCP_COMPILATION
-#include <mcp/mcp-server.h>
-#include <mcp/mcp-message.h>
-#include <mcp/mcp-error.h>
-#include <mcp/mcp-version.h>
-#include <mcp/mcp-task.h>
+#include "mcp-server.h"
+#include "mcp-message.h"
+#include "mcp-error.h"
+#include "mcp-version.h"
+#include "mcp-task.h"
 #undef MCP_COMPILATION
 
 /**

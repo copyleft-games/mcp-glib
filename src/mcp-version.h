@@ -8,9 +8,6 @@
 #ifndef MCP_VERSION_H
 #define MCP_VERSION_H
 
-#if !defined(MCP_INSIDE) && !defined(MCP_COMPILATION)
-#error "Only <mcp/mcp.h> can be included directly."
-#endif
 
 /**
  * MCP_MAJOR_VERSION:
