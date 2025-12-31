@@ -50,6 +50,15 @@ G_BEGIN_DECLS
 #include <mcp/mcp-prompt.h>
 #include <mcp/mcp-task.h>
 
+/* Sampling types */
+#include <mcp/mcp-sampling.h>
+
+/* Root type */
+#include <mcp/mcp-root.h>
+
+/* Completion types */
+#include <mcp/mcp-completion.h>
+
 /* Message types */
 #include <mcp/mcp-message.h>
 

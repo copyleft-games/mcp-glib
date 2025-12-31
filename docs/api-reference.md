@@ -535,3 +535,235 @@ if (g_error_matches (error, MCP_ERROR, MCP_ERROR_TIMEOUT))
     /* Handle timeout */
 }
 ```
+
+---
+
+## McpSamplingMessage (Boxed)
+
+Message for LLM sampling requests.
+
+### Constructor
+
+```c
+McpSamplingMessage *mcp_sampling_message_new (McpRole role);
+```
+
+### Methods
+
+```c
+McpRole mcp_sampling_message_get_role (McpSamplingMessage *self);
+void mcp_sampling_message_add_text (McpSamplingMessage *self, const gchar *text);
+void mcp_sampling_message_add_image (McpSamplingMessage *self, const gchar *data,
+                                      const gchar *mime_type);
+GList *mcp_sampling_message_get_content (McpSamplingMessage *self);
+JsonNode *mcp_sampling_message_to_json (McpSamplingMessage *self);
+McpSamplingMessage *mcp_sampling_message_new_from_json (JsonNode *node, GError **error);
+McpSamplingMessage *mcp_sampling_message_ref (McpSamplingMessage *self);
+void mcp_sampling_message_unref (McpSamplingMessage *self);
+```
+
+---
+
+## McpSamplingResult (Boxed)
+
+Result from LLM sampling.
+
+### Constructor
+
+```c
+McpSamplingResult *mcp_sampling_result_new (McpRole role, const gchar *text);
+```
+
+### Methods
+
+```c
+McpRole mcp_sampling_result_get_role (McpSamplingResult *self);
+const gchar *mcp_sampling_result_get_model (McpSamplingResult *self);
+void mcp_sampling_result_set_model (McpSamplingResult *self, const gchar *model);
+const gchar *mcp_sampling_result_get_stop_reason (McpSamplingResult *self);
+void mcp_sampling_result_set_stop_reason (McpSamplingResult *self, const gchar *reason);
+JsonNode *mcp_sampling_result_to_json (McpSamplingResult *self);
+McpSamplingResult *mcp_sampling_result_new_from_json (JsonNode *node, GError **error);
+McpSamplingResult *mcp_sampling_result_ref (McpSamplingResult *self);
+void mcp_sampling_result_unref (McpSamplingResult *self);
+```
+
+---
+
+## McpModelPreferences (Boxed)
+
+Model preferences for sampling requests.
+
+### Constructor
+
+```c
+McpModelPreferences *mcp_model_preferences_new (void);
+```
+
+### Methods
+
+```c
+void mcp_model_preferences_add_hint (McpModelPreferences *self, const gchar *hint);
+GList *mcp_model_preferences_get_hints (McpModelPreferences *self);
+void mcp_model_preferences_set_cost_priority (McpModelPreferences *self, gdouble priority);
+gdouble mcp_model_preferences_get_cost_priority (McpModelPreferences *self);
+void mcp_model_preferences_set_speed_priority (McpModelPreferences *self, gdouble priority);
+gdouble mcp_model_preferences_get_speed_priority (McpModelPreferences *self);
+void mcp_model_preferences_set_intelligence_priority (McpModelPreferences *self, gdouble priority);
+gdouble mcp_model_preferences_get_intelligence_priority (McpModelPreferences *self);
+JsonNode *mcp_model_preferences_to_json (McpModelPreferences *self);
+McpModelPreferences *mcp_model_preferences_new_from_json (JsonNode *node, GError **error);
+McpModelPreferences *mcp_model_preferences_ref (McpModelPreferences *self);
+void mcp_model_preferences_unref (McpModelPreferences *self);
+```
+
+---
+
+## McpRoot (Boxed)
+
+Filesystem root exposed by client.
+
+### Constructor
+
+```c
+McpRoot *mcp_root_new (const gchar *uri, const gchar *name);
+```
+
+### Methods
+
+```c
+const gchar *mcp_root_get_uri (McpRoot *self);
+const gchar *mcp_root_get_name (McpRoot *self);
+JsonNode *mcp_root_to_json (McpRoot *self);
+McpRoot *mcp_root_new_from_json (JsonNode *node, GError **error);
+McpRoot *mcp_root_ref (McpRoot *self);
+void mcp_root_unref (McpRoot *self);
+```
+
+---
+
+## McpCompletionResult (Boxed)
+
+Result from autocomplete request.
+
+### Constructor
+
+```c
+McpCompletionResult *mcp_completion_result_new (void);
+```
+
+### Methods
+
+```c
+void mcp_completion_result_add_value (McpCompletionResult *self, const gchar *value);
+GList *mcp_completion_result_get_values (McpCompletionResult *self);
+void mcp_completion_result_set_total (McpCompletionResult *self, gint64 total);
+gint64 mcp_completion_result_get_total (McpCompletionResult *self);
+void mcp_completion_result_set_has_more (McpCompletionResult *self, gboolean has_more);
+gboolean mcp_completion_result_get_has_more (McpCompletionResult *self);
+JsonNode *mcp_completion_result_to_json (McpCompletionResult *self);
+McpCompletionResult *mcp_completion_result_new_from_json (JsonNode *node, GError **error);
+McpCompletionResult *mcp_completion_result_ref (McpCompletionResult *self);
+void mcp_completion_result_unref (McpCompletionResult *self);
+```
+
+---
+
+## Server Sampling API
+
+Request LLM sampling from connected client.
+
+```c
+void mcp_server_request_sampling_async (McpServer *self, GList *messages,
+                                        McpModelPreferences *model_preferences,
+                                        const gchar *system_prompt, gint64 max_tokens,
+                                        GCancellable *cancellable,
+                                        GAsyncReadyCallback callback, gpointer user_data);
+McpSamplingResult *mcp_server_request_sampling_finish (McpServer *self,
+                                                        GAsyncResult *result,
+                                                        GError **error);
+```
+
+---
+
+## Server Roots API
+
+Request root list from connected client.
+
+```c
+void mcp_server_list_roots_async (McpServer *self, GCancellable *cancellable,
+                                  GAsyncReadyCallback callback, gpointer user_data);
+GList *mcp_server_list_roots_finish (McpServer *self, GAsyncResult *result, GError **error);
+```
+
+### Server Signals (Additional)
+
+| Signal | Description |
+|--------|-------------|
+| `roots-changed` | Client's roots list changed |
+
+---
+
+## Server Completion API
+
+Handle autocomplete requests.
+
+```c
+typedef McpCompletionResult *(*McpCompletionHandler) (McpServer *server,
+                                                      const gchar *ref_type,
+                                                      const gchar *ref_name,
+                                                      const gchar *argument_name,
+                                                      const gchar *argument_value,
+                                                      gpointer user_data);
+
+void mcp_server_set_completion_handler (McpServer *self, McpCompletionHandler handler,
+                                        gpointer user_data, GDestroyNotify destroy);
+```
+
+---
+
+## Client Sampling API
+
+Handle server sampling requests.
+
+```c
+void mcp_client_respond_sampling (McpClient *self, const gchar *request_id,
+                                   McpSamplingResult *result);
+void mcp_client_reject_sampling (McpClient *self, const gchar *request_id,
+                                  gint error_code, const gchar *message);
+```
+
+### Client Signals (Additional)
+
+| Signal | Description |
+|--------|-------------|
+| `sampling-requested` | Server requests LLM sampling |
+| `roots-list-requested` | Server requests roots list |
+
+---
+
+## Client Roots API
+
+Manage filesystem roots exposed to server.
+
+```c
+void mcp_client_add_root (McpClient *self, McpRoot *root);
+void mcp_client_remove_root (McpClient *self, const gchar *uri);
+GList *mcp_client_list_roots (McpClient *self);
+void mcp_client_notify_roots_changed (McpClient *self);
+```
+
+---
+
+## Client Completion API
+
+Request autocomplete from server.
+
+```c
+void mcp_client_complete_async (McpClient *self, const gchar *ref_type,
+                                const gchar *ref_name, const gchar *argument_name,
+                                const gchar *argument_value, GCancellable *cancellable,
+                                GAsyncReadyCallback callback, gpointer user_data);
+McpCompletionResult *mcp_client_complete_finish (McpClient *self, GAsyncResult *result,
+                                                  GError **error);
+```

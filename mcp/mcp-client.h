@@ -33,6 +33,9 @@
 #include <mcp/mcp-tool-provider.h>
 #include <mcp/mcp-resource-provider.h>
 #include <mcp/mcp-prompt-provider.h>
+#include <mcp/mcp-sampling.h>
+#include <mcp/mcp-root.h>
+#include <mcp/mcp-completion.h>
 
 G_BEGIN_DECLS
 
@@ -585,6 +588,114 @@ void mcp_client_list_tasks_async (McpClient           *self,
 GList *mcp_client_list_tasks_finish (McpClient     *self,
                                      GAsyncResult  *result,
                                      GError       **error);
+
+/* Sampling Response API */
+
+/**
+ * mcp_client_respond_sampling:
+ * @self: an #McpClient
+ * @request_id: the request ID from the sampling-requested signal
+ * @result: (transfer full): the #McpSamplingResult
+ *
+ * Responds to a sampling request with a result.
+ */
+void mcp_client_respond_sampling (McpClient         *self,
+                                  const gchar       *request_id,
+                                  McpSamplingResult *result);
+
+/**
+ * mcp_client_reject_sampling:
+ * @self: an #McpClient
+ * @request_id: the request ID from the sampling-requested signal
+ * @error_code: the error code
+ * @error_message: the error message
+ *
+ * Rejects a sampling request with an error.
+ */
+void mcp_client_reject_sampling (McpClient   *self,
+                                 const gchar *request_id,
+                                 gint         error_code,
+                                 const gchar *error_message);
+
+/* Roots Management API */
+
+/**
+ * mcp_client_add_root:
+ * @self: an #McpClient
+ * @root: (transfer none): the #McpRoot to add
+ *
+ * Adds a root to the client's root list.
+ */
+void mcp_client_add_root (McpClient *self,
+                          McpRoot   *root);
+
+/**
+ * mcp_client_remove_root:
+ * @self: an #McpClient
+ * @uri: the root URI to remove
+ *
+ * Removes a root from the client's root list.
+ *
+ * Returns: %TRUE if the root was found and removed
+ */
+gboolean mcp_client_remove_root (McpClient   *self,
+                                 const gchar *uri);
+
+/**
+ * mcp_client_list_roots:
+ * @self: an #McpClient
+ *
+ * Gets the list of roots.
+ *
+ * Returns: (transfer none) (element-type McpRoot): the roots list
+ */
+GList *mcp_client_list_roots (McpClient *self);
+
+/**
+ * mcp_client_notify_roots_changed:
+ * @self: an #McpClient
+ *
+ * Notifies the server that the roots list has changed.
+ */
+void mcp_client_notify_roots_changed (McpClient *self);
+
+/* Completion Request API */
+
+/**
+ * mcp_client_complete_async:
+ * @self: an #McpClient
+ * @ref_type: the reference type ("ref/prompt" or "ref/resource")
+ * @ref_name: the prompt name or resource URI
+ * @argument_name: the argument name being completed
+ * @argument_value: the current argument value
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: (scope async): callback to call when complete
+ * @user_data: (closure): user data for @callback
+ *
+ * Requests completions from the server.
+ */
+void mcp_client_complete_async (McpClient           *self,
+                                const gchar         *ref_type,
+                                const gchar         *ref_name,
+                                const gchar         *argument_name,
+                                const gchar         *argument_value,
+                                GCancellable        *cancellable,
+                                GAsyncReadyCallback  callback,
+                                gpointer             user_data);
+
+/**
+ * mcp_client_complete_finish:
+ * @self: an #McpClient
+ * @result: the #GAsyncResult
+ * @error: (nullable): return location for a #GError
+ *
+ * Completes an asynchronous completion request.
+ *
+ * Returns: (transfer full) (nullable): the #McpCompletionResult, or %NULL on error
+ */
+McpCompletionResult *mcp_client_complete_finish (McpClient     *self,
+                                                  GAsyncResult  *result,
+                                                  GError       **error);
 
 G_END_DECLS
 

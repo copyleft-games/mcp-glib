@@ -32,6 +32,9 @@
 #include <mcp/mcp-tool-provider.h>
 #include <mcp/mcp-resource-provider.h>
 #include <mcp/mcp-prompt-provider.h>
+#include <mcp/mcp-sampling.h>
+#include <mcp/mcp-root.h>
+#include <mcp/mcp-completion.h>
 
 G_BEGIN_DECLS
 
@@ -107,6 +110,27 @@ typedef McpToolResult *(*McpAsyncToolHandler) (McpServer   *server,
                                                const gchar *name,
                                                JsonObject  *arguments,
                                                gpointer     user_data);
+
+/**
+ * McpCompletionHandler:
+ * @server: the #McpServer
+ * @ref_type: the reference type ("ref/prompt" or "ref/resource")
+ * @ref_name: the reference name (prompt name or resource URI)
+ * @argument_name: (nullable): the argument name for prompts
+ * @argument_value: the current argument value to complete
+ * @user_data: user data
+ *
+ * Callback function for handling completion requests.
+ * Returns autocomplete suggestions for the given argument value.
+ *
+ * Returns: (transfer full): the #McpCompletionResult
+ */
+typedef McpCompletionResult *(*McpCompletionHandler) (McpServer   *server,
+                                                      const gchar *ref_type,
+                                                      const gchar *ref_name,
+                                                      const gchar *argument_name,
+                                                      const gchar *argument_value,
+                                                      gpointer     user_data);
 
 /**
  * mcp_server_new:
@@ -552,6 +576,94 @@ gboolean mcp_server_cancel_task (McpServer   *self,
  */
 void mcp_server_notify_task_status (McpServer *self,
                                     McpTask   *task);
+
+/* Sampling API (Server requests LLM sampling from client) */
+
+/**
+ * mcp_server_request_sampling_async:
+ * @self: an #McpServer
+ * @messages: (element-type McpSamplingMessage): list of messages for the LLM
+ * @model_preferences: (nullable): model preferences
+ * @system_prompt: (nullable): system prompt for the LLM
+ * @max_tokens: maximum tokens to generate
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: (scope async): callback to call when complete
+ * @user_data: (closure): user data for @callback
+ *
+ * Requests the client to perform LLM sampling.
+ * This is a server-to-client request (role reversal).
+ */
+void mcp_server_request_sampling_async (McpServer           *self,
+                                        GList               *messages,
+                                        McpModelPreferences *model_preferences,
+                                        const gchar         *system_prompt,
+                                        gint64               max_tokens,
+                                        GCancellable        *cancellable,
+                                        GAsyncReadyCallback  callback,
+                                        gpointer             user_data);
+
+/**
+ * mcp_server_request_sampling_finish:
+ * @self: an #McpServer
+ * @result: the #GAsyncResult
+ * @error: (nullable): return location for a #GError
+ *
+ * Completes an asynchronous sampling request.
+ *
+ * Returns: (transfer full): the #McpSamplingResult, or %NULL on error
+ */
+McpSamplingResult *mcp_server_request_sampling_finish (McpServer     *self,
+                                                       GAsyncResult  *result,
+                                                       GError       **error);
+
+/* Roots API (Server requests root list from client) */
+
+/**
+ * mcp_server_list_roots_async:
+ * @self: an #McpServer
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: (scope async): callback to call when complete
+ * @user_data: (closure): user data for @callback
+ *
+ * Requests the list of roots from the client.
+ * This is a server-to-client request (role reversal).
+ */
+void mcp_server_list_roots_async (McpServer           *self,
+                                  GCancellable        *cancellable,
+                                  GAsyncReadyCallback  callback,
+                                  gpointer             user_data);
+
+/**
+ * mcp_server_list_roots_finish:
+ * @self: an #McpServer
+ * @result: the #GAsyncResult
+ * @error: (nullable): return location for a #GError
+ *
+ * Completes an asynchronous roots list request.
+ *
+ * Returns: (transfer full) (element-type McpRoot): list of roots, or %NULL on error
+ */
+GList *mcp_server_list_roots_finish (McpServer     *self,
+                                     GAsyncResult  *result,
+                                     GError       **error);
+
+/* Completion API */
+
+/**
+ * mcp_server_set_completion_handler:
+ * @self: an #McpServer
+ * @handler: (scope notified) (nullable): the handler function
+ * @user_data: (closure): user data for @handler
+ * @destroy: (destroy user_data): destroy notify for @user_data
+ *
+ * Sets the handler for completion requests.
+ * The completion handler provides autocomplete suggestions for
+ * prompt arguments and resource URIs.
+ */
+void mcp_server_set_completion_handler (McpServer            *self,
+                                        McpCompletionHandler  handler,
+                                        gpointer              user_data,
+                                        GDestroyNotify        destroy);
 
 G_END_DECLS
 

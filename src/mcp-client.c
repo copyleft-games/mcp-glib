@@ -41,6 +41,9 @@ struct _McpClient
 
     /* Pending connect task */
     GTask *connect_task;
+
+    /* Roots management */
+    GList *roots;  /* List of McpRoot* */
 };
 
 G_DEFINE_TYPE (McpClient, mcp_client, MCP_TYPE_SESSION)
@@ -64,6 +67,8 @@ enum
     SIGNAL_PROMPTS_CHANGED,
     SIGNAL_RESOURCE_UPDATED,
     SIGNAL_LOG_MESSAGE,
+    SIGNAL_SAMPLING_REQUESTED,
+    SIGNAL_ROOTS_LIST_REQUESTED,
     N_SIGNALS
 };
 
@@ -87,6 +92,8 @@ static void handle_error        (McpClient        *self,
                                  McpErrorResponse *error);
 static void handle_notification (McpClient       *self,
                                  McpNotification *notification);
+static void handle_request      (McpClient  *self,
+                                 McpRequest *request);
 
 static void
 mcp_client_dispose (GObject *object)
@@ -126,6 +133,7 @@ mcp_client_finalize (GObject *object)
     McpClient *self = MCP_CLIENT (object);
 
     g_free (self->server_instructions);
+    g_list_free_full (self->roots, (GDestroyNotify)mcp_root_unref);
 
     G_OBJECT_CLASS (mcp_client_parent_class)->finalize (object);
 }
@@ -267,6 +275,47 @@ mcp_client_class_init (McpClientClass *klass)
                       0, NULL, NULL, NULL,
                       G_TYPE_NONE, 3,
                       G_TYPE_STRING, G_TYPE_STRING, JSON_TYPE_NODE);
+
+    /**
+     * McpClient::sampling-requested:
+     * @self: the #McpClient
+     * @request_id: the JSON-RPC request ID
+     * @messages: (element-type McpSamplingMessage): the messages list
+     * @model_preferences: (nullable): the #McpModelPreferences
+     * @system_prompt: (nullable): the system prompt
+     * @max_tokens: the maximum tokens (-1 if not specified)
+     *
+     * Emitted when the server requests LLM sampling via sampling/createMessage.
+     * The signal handler should call mcp_client_respond_sampling() or
+     * mcp_client_reject_sampling() to respond.
+     */
+    signals[SIGNAL_SAMPLING_REQUESTED] =
+        g_signal_new ("sampling-requested",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      0, NULL, NULL, NULL,
+                      G_TYPE_NONE, 5,
+                      G_TYPE_STRING,      /* request_id */
+                      G_TYPE_POINTER,     /* messages (GList*) */
+                      G_TYPE_POINTER,     /* model_preferences */
+                      G_TYPE_STRING,      /* system_prompt */
+                      G_TYPE_INT64);      /* max_tokens */
+
+    /**
+     * McpClient::roots-list-requested:
+     * @self: the #McpClient
+     * @request_id: the JSON-RPC request ID
+     *
+     * Emitted when the server requests the list of roots via roots/list.
+     * The client will automatically respond with its current roots list.
+     */
+    signals[SIGNAL_ROOTS_LIST_REQUESTED] =
+        g_signal_new ("roots-list-requested",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      0, NULL, NULL, NULL,
+                      G_TYPE_NONE, 1,
+                      G_TYPE_STRING);     /* request_id */
 }
 
 static void
@@ -1074,6 +1123,90 @@ mcp_client_ping_finish (McpClient     *self,
 
 /* Transport callbacks */
 
+/*
+ * send_message_cb:
+ *
+ * Generic callback for send operations.
+ */
+static void
+send_message_cb (GObject      *source,
+                 GAsyncResult *result,
+                 gpointer      user_data)
+{
+    GError *error = NULL;
+
+    if (!mcp_transport_send_message_finish (MCP_TRANSPORT (source), result, &error))
+    {
+        g_warning ("Failed to send message: %s", error->message);
+        g_error_free (error);
+    }
+}
+
+/*
+ * send_response:
+ * @self: the client
+ * @id: the request ID
+ * @result_node: the result to send
+ *
+ * Sends a JSON-RPC response to the server.
+ */
+static void
+send_response (McpClient *self,
+               const gchar *id,
+               JsonNode    *result_node)
+{
+    g_autoptr(McpResponse) response = NULL;
+    g_autoptr(JsonNode) node = NULL;
+    g_autoptr(JsonNode) result_owned = result_node;
+
+    if (self->transport == NULL)
+    {
+        return;
+    }
+
+    response = mcp_response_new (id, g_steal_pointer (&result_owned));
+    node = mcp_message_to_json (MCP_MESSAGE (response));
+
+    mcp_transport_send_message_async (self->transport, node, NULL,
+                                      send_message_cb, NULL);
+}
+
+/*
+ * send_error_response:
+ * @self: the client
+ * @id: the request ID (can be NULL)
+ * @code: the error code
+ * @message: the error message
+ * @data: (nullable): additional error data
+ *
+ * Sends a JSON-RPC error response to the server.
+ */
+static void
+send_error_response (McpClient   *self,
+                     const gchar *id,
+                     gint         code,
+                     const gchar *message,
+                     JsonNode    *data)
+{
+    g_autoptr(McpErrorResponse) error_resp = NULL;
+    g_autoptr(JsonNode) node = NULL;
+
+    if (self->transport == NULL)
+    {
+        return;
+    }
+
+    error_resp = mcp_error_response_new (id, code, message);
+    if (data != NULL)
+    {
+        mcp_error_response_set_data (error_resp, data);
+    }
+    node = mcp_message_to_json (MCP_MESSAGE (error_resp));
+
+    mcp_transport_send_message_async (self->transport, node, NULL,
+                                      send_message_cb, NULL);
+}
+
 static void
 on_message_received (McpTransport *transport,
                      JsonNode     *message,
@@ -1092,6 +1225,9 @@ on_message_received (McpTransport *transport,
 
     switch (mcp_message_get_message_type (msg))
     {
+        case MCP_MESSAGE_TYPE_REQUEST:
+            handle_request (self, MCP_REQUEST (msg));
+            break;
         case MCP_MESSAGE_TYPE_RESPONSE:
             handle_response (self, MCP_RESPONSE (msg));
             break;
@@ -1800,6 +1936,161 @@ handle_notification (McpClient       *self,
     }
 }
 
+/*
+ * handle_request:
+ * @self: the client
+ * @request: the incoming request from server
+ *
+ * Handles server-initiated requests (role reversal for sampling/roots).
+ */
+static void
+handle_request (McpClient  *self,
+                McpRequest *request)
+{
+    const gchar *method;
+    const gchar *id;
+    JsonNode *params;
+
+    method = mcp_request_get_method (request);
+    id = mcp_request_get_id (request);
+    params = mcp_request_get_params (request);
+
+    if (g_strcmp0 (method, "sampling/createMessage") == 0)
+    {
+        /*
+         * Server is requesting LLM sampling from the client.
+         * Parse the request and emit the sampling-requested signal.
+         */
+        JsonObject *obj;
+        JsonArray *messages_arr;
+        GList *messages = NULL;
+        McpModelPreferences *model_prefs = NULL;
+        const gchar *system_prompt = NULL;
+        gint64 max_tokens = -1;
+        guint i;
+        guint len;
+
+        if (params == NULL || !JSON_NODE_HOLDS_OBJECT (params))
+        {
+            send_error_response (self, id, MCP_ERROR_INVALID_PARAMS,
+                                 "Invalid sampling request params", NULL);
+            return;
+        }
+
+        obj = json_node_get_object (params);
+
+        /* Parse messages */
+        if (!json_object_has_member (obj, "messages"))
+        {
+            send_error_response (self, id, MCP_ERROR_INVALID_PARAMS,
+                                 "Missing 'messages' field", NULL);
+            return;
+        }
+
+        messages_arr = json_object_get_array_member (obj, "messages");
+        len = json_array_get_length (messages_arr);
+        for (i = 0; i < len; i++)
+        {
+            JsonNode *msg_node = json_array_get_element (messages_arr, i);
+            g_autoptr(GError) error = NULL;
+            McpSamplingMessage *msg;
+
+            msg = mcp_sampling_message_new_from_json (msg_node, &error);
+            if (msg != NULL)
+            {
+                messages = g_list_append (messages, msg);
+            }
+            else
+            {
+                g_warning ("Failed to parse sampling message: %s", error->message);
+            }
+        }
+
+        /* Parse optional model preferences */
+        if (json_object_has_member (obj, "modelPreferences"))
+        {
+            JsonNode *prefs_node = json_object_get_member (obj, "modelPreferences");
+            model_prefs = mcp_model_preferences_new_from_json (prefs_node, NULL);
+        }
+
+        /* Parse optional system prompt */
+        if (json_object_has_member (obj, "systemPrompt"))
+        {
+            system_prompt = json_object_get_string_member (obj, "systemPrompt");
+        }
+
+        /* Parse optional max tokens */
+        if (json_object_has_member (obj, "maxTokens"))
+        {
+            max_tokens = json_object_get_int_member (obj, "maxTokens");
+        }
+
+        /* Emit signal for application to handle */
+        g_signal_emit (self, signals[SIGNAL_SAMPLING_REQUESTED], 0,
+                       id, messages, model_prefs, system_prompt, max_tokens);
+
+        /* Clean up (application should have taken references if needed) */
+        g_list_free_full (messages, (GDestroyNotify)mcp_sampling_message_unref);
+        if (model_prefs != NULL)
+        {
+            mcp_model_preferences_unref (model_prefs);
+        }
+    }
+    else if (g_strcmp0 (method, "roots/list") == 0)
+    {
+        /*
+         * Server is requesting the list of roots from the client.
+         * Respond with the current roots list.
+         */
+        JsonBuilder *builder;
+        JsonNode *result;
+        GList *l;
+
+        /* Emit signal so application knows the request was made */
+        g_signal_emit (self, signals[SIGNAL_ROOTS_LIST_REQUESTED], 0, id);
+
+        /* Build response */
+        builder = json_builder_new ();
+        json_builder_begin_object (builder);
+        json_builder_set_member_name (builder, "roots");
+        json_builder_begin_array (builder);
+
+        for (l = self->roots; l != NULL; l = l->next)
+        {
+            McpRoot *root = l->data;
+            g_autoptr(JsonNode) root_node = mcp_root_to_json (root);
+            json_builder_add_value (builder, g_steal_pointer (&root_node));
+        }
+
+        json_builder_end_array (builder);
+        json_builder_end_object (builder);
+        result = json_builder_get_root (builder);
+        g_object_unref (builder);
+
+        send_response (self, id, result);
+    }
+    else if (g_strcmp0 (method, "ping") == 0)
+    {
+        /* Respond to ping from server */
+        JsonBuilder *builder;
+        JsonNode *result;
+
+        builder = json_builder_new ();
+        json_builder_begin_object (builder);
+        json_builder_end_object (builder);
+        result = json_builder_get_root (builder);
+        g_object_unref (builder);
+
+        send_response (self, id, result);
+    }
+    else
+    {
+        /* Unknown method */
+        send_error_response (self, id, MCP_ERROR_METHOD_NOT_FOUND,
+                             "Method not found", NULL);
+    }
+}
+
 /* Tasks API Implementation */
 
 void
@@ -1999,6 +2290,270 @@ GList *
 mcp_client_list_tasks_finish (McpClient     *self,
                               GAsyncResult  *result,
                               GError       **error)
+{
+    g_return_val_if_fail (MCP_IS_CLIENT (self), NULL);
+    g_return_val_if_fail (g_task_is_valid (result, self), NULL);
+
+    return g_task_propagate_pointer (G_TASK (result), error);
+}
+
+/* ========================================================================== */
+/* Sampling Response API                                                      */
+/* ========================================================================== */
+
+/**
+ * mcp_client_respond_sampling:
+ * @self: an #McpClient
+ * @request_id: the request ID from the sampling-requested signal
+ * @result: (transfer full): the #McpSamplingResult
+ *
+ * Responds to a sampling request with a result.
+ * Call this from the sampling-requested signal handler.
+ */
+void
+mcp_client_respond_sampling (McpClient         *self,
+                             const gchar       *request_id,
+                             McpSamplingResult *result)
+{
+    g_autoptr(JsonNode) result_node = NULL;
+
+    g_return_if_fail (MCP_IS_CLIENT (self));
+    g_return_if_fail (request_id != NULL);
+    g_return_if_fail (result != NULL);
+
+    result_node = mcp_sampling_result_to_json (result);
+    send_response (self, request_id, g_steal_pointer (&result_node));
+
+    mcp_sampling_result_unref (result);
+}
+
+/**
+ * mcp_client_reject_sampling:
+ * @self: an #McpClient
+ * @request_id: the request ID from the sampling-requested signal
+ * @error_code: the error code
+ * @error_message: the error message
+ *
+ * Rejects a sampling request with an error.
+ * Call this from the sampling-requested signal handler.
+ */
+void
+mcp_client_reject_sampling (McpClient   *self,
+                            const gchar *request_id,
+                            gint         error_code,
+                            const gchar *error_message)
+{
+    g_return_if_fail (MCP_IS_CLIENT (self));
+    g_return_if_fail (request_id != NULL);
+    g_return_if_fail (error_message != NULL);
+
+    send_error_response (self, request_id, error_code, error_message, NULL);
+}
+
+/* ========================================================================== */
+/* Roots Management API                                                       */
+/* ========================================================================== */
+
+/**
+ * mcp_client_add_root:
+ * @self: an #McpClient
+ * @root: (transfer none): the #McpRoot to add
+ *
+ * Adds a root to the client's root list.
+ * The root is copied, so the caller retains ownership.
+ */
+void
+mcp_client_add_root (McpClient *self,
+                     McpRoot   *root)
+{
+    g_return_if_fail (MCP_IS_CLIENT (self));
+    g_return_if_fail (root != NULL);
+
+    self->roots = g_list_append (self->roots, mcp_root_ref (root));
+}
+
+/**
+ * mcp_client_remove_root:
+ * @self: an #McpClient
+ * @uri: the root URI to remove
+ *
+ * Removes a root from the client's root list.
+ *
+ * Returns: %TRUE if the root was found and removed
+ */
+gboolean
+mcp_client_remove_root (McpClient   *self,
+                        const gchar *uri)
+{
+    GList *l;
+
+    g_return_val_if_fail (MCP_IS_CLIENT (self), FALSE);
+    g_return_val_if_fail (uri != NULL, FALSE);
+
+    for (l = self->roots; l != NULL; l = l->next)
+    {
+        McpRoot *root = l->data;
+
+        if (g_strcmp0 (mcp_root_get_uri (root), uri) == 0)
+        {
+            self->roots = g_list_delete_link (self->roots, l);
+            mcp_root_unref (root);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/**
+ * mcp_client_list_roots:
+ * @self: an #McpClient
+ *
+ * Gets the list of roots.
+ *
+ * Returns: (transfer none) (element-type McpRoot): the roots list
+ */
+GList *
+mcp_client_list_roots (McpClient *self)
+{
+    g_return_val_if_fail (MCP_IS_CLIENT (self), NULL);
+    return self->roots;
+}
+
+/**
+ * mcp_client_notify_roots_changed:
+ * @self: an #McpClient
+ *
+ * Notifies the server that the roots list has changed.
+ * Call this after adding or removing roots.
+ */
+void
+mcp_client_notify_roots_changed (McpClient *self)
+{
+    g_autoptr(McpNotification) notif = NULL;
+    g_autoptr(JsonNode) node = NULL;
+
+    g_return_if_fail (MCP_IS_CLIENT (self));
+
+    if (self->transport == NULL ||
+        mcp_session_get_state (MCP_SESSION (self)) != MCP_SESSION_STATE_READY)
+    {
+        return;
+    }
+
+    notif = mcp_notification_new ("notifications/roots/list_changed");
+    node = mcp_message_to_json (MCP_MESSAGE (notif));
+
+    mcp_transport_send_message_async (self->transport, node, NULL,
+                                      send_message_cb, NULL);
+}
+
+/* ========================================================================== */
+/* Completion Request API                                                     */
+/* ========================================================================== */
+
+/**
+ * mcp_client_complete_async:
+ * @self: an #McpClient
+ * @ref_type: the reference type ("ref/prompt" or "ref/resource")
+ * @ref_name: the prompt name or resource URI
+ * @argument_name: the argument name being completed
+ * @argument_value: the current argument value
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: (scope async): callback to call when complete
+ * @user_data: (closure): user data for @callback
+ *
+ * Requests completions from the server.
+ */
+void
+mcp_client_complete_async (McpClient           *self,
+                           const gchar         *ref_type,
+                           const gchar         *ref_name,
+                           const gchar         *argument_name,
+                           const gchar         *argument_value,
+                           GCancellable        *cancellable,
+                           GAsyncReadyCallback  callback,
+                           gpointer             user_data)
+{
+    GTask *task;
+    g_autoptr(McpRequest) request = NULL;
+    g_autoptr(JsonBuilder) builder = NULL;
+    g_autoptr(JsonNode) params = NULL;
+    g_autofree gchar *id = NULL;
+
+    g_return_if_fail (MCP_IS_CLIENT (self));
+    g_return_if_fail (ref_type != NULL);
+    g_return_if_fail (ref_name != NULL);
+    g_return_if_fail (argument_name != NULL);
+    g_return_if_fail (argument_value != NULL);
+
+    task = g_task_new (self, cancellable, callback, user_data);
+    g_task_set_source_tag (task, mcp_client_complete_async);
+    g_task_set_task_data (task, GINT_TO_POINTER (15), NULL); /* Mark as completion/complete */
+
+    if (mcp_session_get_state (MCP_SESSION (self)) != MCP_SESSION_STATE_READY)
+    {
+        g_task_return_new_error (task, MCP_ERROR, MCP_ERROR_INTERNAL_ERROR,
+                                 "Client not connected");
+        g_object_unref (task);
+        return;
+    }
+
+    id = mcp_session_generate_request_id (MCP_SESSION (self));
+    request = mcp_request_new ("completion/complete", id);
+
+    builder = json_builder_new ();
+    json_builder_begin_object (builder);
+
+    /* ref object */
+    json_builder_set_member_name (builder, "ref");
+    json_builder_begin_object (builder);
+    json_builder_set_member_name (builder, "type");
+    json_builder_add_string_value (builder, ref_type);
+    if (g_strcmp0 (ref_type, "ref/prompt") == 0)
+    {
+        json_builder_set_member_name (builder, "name");
+        json_builder_add_string_value (builder, ref_name);
+    }
+    else
+    {
+        json_builder_set_member_name (builder, "uri");
+        json_builder_add_string_value (builder, ref_name);
+    }
+    json_builder_end_object (builder);
+
+    /* argument object */
+    json_builder_set_member_name (builder, "argument");
+    json_builder_begin_object (builder);
+    json_builder_set_member_name (builder, "name");
+    json_builder_add_string_value (builder, argument_name);
+    json_builder_set_member_name (builder, "value");
+    json_builder_add_string_value (builder, argument_value);
+    json_builder_end_object (builder);
+
+    json_builder_end_object (builder);
+    params = json_builder_get_root (builder);
+
+    mcp_request_set_params (request, g_steal_pointer (&params));
+
+    send_request (self, request, task);
+    g_object_unref (task);
+}
+
+/**
+ * mcp_client_complete_finish:
+ * @self: an #McpClient
+ * @result: the #GAsyncResult
+ * @error: (nullable): return location for a #GError
+ *
+ * Completes an asynchronous completion request.
+ *
+ * Returns: (transfer full) (nullable): the #McpCompletionResult, or %NULL on error
+ */
+McpCompletionResult *
+mcp_client_complete_finish (McpClient     *self,
+                            GAsyncResult  *result,
+                            GError       **error)
 {
     g_return_val_if_fail (MCP_IS_CLIENT (self), NULL);
     g_return_val_if_fail (g_task_is_valid (result, self), NULL);
