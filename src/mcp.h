@@ -66,9 +66,25 @@ G_BEGIN_DECLS
 
 /* Transport */
 #include "mcp-transport.h"
+
+/*
+ * Stdio transport requires platform-specific stream APIs.
+ * On Windows cross-compilation via mingw, gwin32inputstream.h is unavailable.
+ * Define MCP_NO_STDIO_TRANSPORT to exclude this transport.
+ */
+#ifndef MCP_NO_STDIO_TRANSPORT
 #include "mcp-stdio-transport.h"
+#endif
+
+/*
+ * HTTP and WebSocket transports require libsoup-3.0 which may not be
+ * available on all platforms (e.g., Windows via mingw).
+ * Define MCP_NO_LIBSOUP to exclude these transports.
+ */
+#ifndef MCP_NO_LIBSOUP
 #include "mcp-http-transport.h"
 #include "mcp-websocket-transport.h"
+#endif
 
 /* Provider interfaces */
 #include "mcp-tool-provider.h"

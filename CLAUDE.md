@@ -38,6 +38,39 @@ sudo dnf install gcc make pkgconfig glib2-devel json-glib-devel \
     libsoup3-devel libdex-devel gobject-introspection-devel
 ```
 
+## Cross-Compilation
+
+```bash
+# Windows x64 (requires mingw64-* packages)
+make WINDOWS=1
+
+# Linux ARM64
+make LINUX_ARM64=1
+
+# Custom cross-compiler
+make CROSS=x86_64-w64-mingw32
+
+# Show build configuration
+make info
+```
+
+### Windows Cross-Compilation Packages (Fedora)
+
+```bash
+sudo dnf install mingw64-gcc mingw64-glib2 mingw64-json-glib mingw64-pkg-config
+```
+
+### Platform-Specific Defines
+
+| Define | Effect |
+|--------|--------|
+| `MCP_NO_LIBSOUP` | Excludes HTTP/WebSocket transports |
+| `MCP_NO_STDIO_TRANSPORT` | Excludes stdio transport |
+
+### Windows Build Limitations
+
+mingw cross-compilation excludes transports (stdio, HTTP, WebSocket) due to missing headers/packages in Fedora's mingw repositories. Core MCP types are fully available.
+
 ## Directory Structure
 
 ```

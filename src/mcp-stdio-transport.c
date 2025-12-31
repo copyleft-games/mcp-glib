@@ -8,11 +8,20 @@
 #include "mcp-error.h"
 #undef MCP_COMPILATION
 
+/*
+ * Platform-specific includes for stdio streams.
+ * Windows uses Win32 handles, Unix uses file descriptors.
+ */
+#ifdef _WIN32
+#include <gio/gwin32inputstream.h>
+#include <gio/gwin32outputstream.h>
+#include <windows.h>
+#else
 #include <gio/gunixinputstream.h>
 #include <gio/gunixoutputstream.h>
-
 #include <unistd.h>
 #include <signal.h>
+#endif
 
 /**
  * SECTION:mcp-stdio-transport
@@ -151,11 +160,17 @@ mcp_stdio_transport_dispose (GObject *object)
 
     if (self->subprocess != NULL)
     {
-        /* Send SIGTERM if still running */
+        /* Terminate subprocess if still running */
         if (g_subprocess_get_if_exited (self->subprocess) == FALSE &&
             g_subprocess_get_if_signaled (self->subprocess) == FALSE)
         {
+#ifdef _WIN32
+            /* Windows: Use force exit - no SIGTERM equivalent */
+            g_subprocess_force_exit (self->subprocess);
+#else
+            /* Unix: Send SIGTERM for graceful shutdown */
             g_subprocess_send_signal (self->subprocess, SIGTERM);
+#endif
         }
         g_clear_object (&self->subprocess);
     }
@@ -354,13 +369,19 @@ stdio_transport_disconnect_async (McpTransport        *transport,
         g_input_stream_close (self->input, NULL, NULL);
     }
 
-    /* Kill subprocess if any */
+    /* Terminate subprocess if any */
     if (self->subprocess != NULL)
     {
         if (g_subprocess_get_if_exited (self->subprocess) == FALSE &&
             g_subprocess_get_if_signaled (self->subprocess) == FALSE)
         {
+#ifdef _WIN32
+            /* Windows: Use force exit - no SIGTERM equivalent */
+            g_subprocess_force_exit (self->subprocess);
+#else
+            /* Unix: Send SIGTERM for graceful shutdown */
             g_subprocess_send_signal (self->subprocess, SIGTERM);
+#endif
         }
     }
 
@@ -663,9 +684,14 @@ mcp_stdio_transport_new (void)
 
     self = g_object_new (MCP_TYPE_STDIO_TRANSPORT, NULL);
 
-    /* Use stdin and stdout */
+    /* Use stdin and stdout - platform-specific stream creation */
+#ifdef _WIN32
+    self->input = g_win32_input_stream_new (GetStdHandle (STD_INPUT_HANDLE), FALSE);
+    self->output = g_win32_output_stream_new (GetStdHandle (STD_OUTPUT_HANDLE), FALSE);
+#else
     self->input = g_unix_input_stream_new (STDIN_FILENO, FALSE);
     self->output = g_unix_output_stream_new (STDOUT_FILENO, FALSE);
+#endif
     self->owns_streams = FALSE;
 
     return self;

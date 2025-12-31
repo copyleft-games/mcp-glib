@@ -10,6 +10,7 @@ A GLib/GObject implementation of the [Model Context Protocol (MCP)](https://mode
 - **Stdio Transport** - Process-based communication via stdin/stdout
 - **GObject Introspection** - First-class support for language bindings (Python, JavaScript, etc.)
 - **Async Operations** - Built on libdex for composable async futures
+- **Cross-Platform** - Windows DLL via mingw cross-compilation
 
 ## Status
 
@@ -45,6 +46,15 @@ make examples     # Build examples
 make gir          # Generate GIR and typelib
 make install      # Install to /usr/local
 ```
+
+### Cross-Compilation
+
+```bash
+make WINDOWS=1      # Windows x64 DLL (via mingw)
+make LINUX_ARM64=1  # Linux ARM64
+```
+
+See [docs/building.md](docs/building.md#cross-compilation) for details.
 
 ## Quick Example
 
