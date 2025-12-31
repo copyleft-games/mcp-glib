@@ -44,7 +44,7 @@ sudo dnf install gcc make pkgconfig glib2-devel json-glib-devel \
 # Windows x64 (requires mingw64-* packages)
 make WINDOWS=1
 
-# Linux ARM64
+# Linux ARM64 (requires sysroot setup first)
 make LINUX_ARM64=1
 
 # Custom cross-compiler
@@ -58,6 +58,16 @@ make info
 
 ```bash
 sudo dnf install mingw64-gcc mingw64-glib2 mingw64-json-glib mingw64-pkg-config
+```
+
+### ARM64 Linux Cross-Compilation Setup
+
+```bash
+# Install cross-compiler and base sysroot
+sudo dnf install gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sysroot-aarch64-fc41-glibc
+
+# Add required libraries to sysroot
+sudo ./scripts/setup-arm64-sysroot.sh
 ```
 
 ### Platform-Specific Defines

@@ -102,9 +102,23 @@ For full Windows support with all transports, build natively on Windows with MSY
 #### Requirements
 
 ```bash
-# Fedora
-sudo dnf install gcc-aarch64-linux-gnu sysroot-aarch64-fc43-glibc
+# Fedora - Install cross-compiler and base sysroot
+sudo dnf install gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu sysroot-aarch64-fc41-glibc
 ```
+
+#### Sysroot Setup
+
+The base Fedora sysroot does not include the required libraries. Use the provided script to download and install ARM64 packages:
+
+```bash
+# Add libraries to the Fedora sysroot (requires sudo)
+sudo ./scripts/setup-arm64-sysroot.sh
+
+# Or use a custom sysroot path
+./scripts/setup-arm64-sysroot.sh ~/arm64-sysroot
+```
+
+The script downloads ARM64 packages for: glib2, json-glib, libsoup3, libdex, and all dependencies.
 
 #### Building
 
