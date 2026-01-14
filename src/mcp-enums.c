@@ -12,9 +12,9 @@
 GType
 mcp_transport_state_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_TRANSPORT_STATE_DISCONNECTED, "MCP_TRANSPORT_STATE_DISCONNECTED", "disconnected" },
@@ -24,13 +24,13 @@ mcp_transport_state_get_type (void)
             { MCP_TRANSPORT_STATE_ERROR, "MCP_TRANSPORT_STATE_ERROR", "error" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpTransportState", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpTransportState", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
@@ -39,9 +39,9 @@ mcp_transport_state_get_type (void)
 GType
 mcp_log_level_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_LOG_LEVEL_DEBUG, "MCP_LOG_LEVEL_DEBUG", "debug" },
@@ -54,13 +54,13 @@ mcp_log_level_get_type (void)
             { MCP_LOG_LEVEL_EMERGENCY, "MCP_LOG_LEVEL_EMERGENCY", "emergency" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpLogLevel", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpLogLevel", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
@@ -69,9 +69,9 @@ mcp_log_level_get_type (void)
 GType
 mcp_content_type_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_CONTENT_TYPE_TEXT, "MCP_CONTENT_TYPE_TEXT", "text" },
@@ -81,13 +81,13 @@ mcp_content_type_get_type (void)
             { MCP_CONTENT_TYPE_RESOURCE_LINK, "MCP_CONTENT_TYPE_RESOURCE_LINK", "resource_link" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpContentType", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpContentType", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
@@ -96,22 +96,22 @@ mcp_content_type_get_type (void)
 GType
 mcp_role_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_ROLE_USER, "MCP_ROLE_USER", "user" },
             { MCP_ROLE_ASSISTANT, "MCP_ROLE_ASSISTANT", "assistant" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpRole", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpRole", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
@@ -120,9 +120,9 @@ mcp_role_get_type (void)
 GType
 mcp_task_status_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_TASK_STATUS_WORKING, "MCP_TASK_STATUS_WORKING", "working" },
@@ -132,13 +132,13 @@ mcp_task_status_get_type (void)
             { MCP_TASK_STATUS_CANCELLED, "MCP_TASK_STATUS_CANCELLED", "cancelled" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpTaskStatus", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpTaskStatus", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
@@ -147,9 +147,9 @@ mcp_task_status_get_type (void)
 GType
 mcp_message_type_get_type (void)
 {
-    static volatile gsize g_define_type_id__volatile = 0;
+    static gpointer g_define_type_id = NULL;
 
-    if (g_once_init_enter (&g_define_type_id__volatile))
+    if (g_once_init_enter_pointer (&g_define_type_id))
     {
         static const GEnumValue values[] = {
             { MCP_MESSAGE_TYPE_REQUEST, "MCP_MESSAGE_TYPE_REQUEST", "request" },
@@ -158,13 +158,13 @@ mcp_message_type_get_type (void)
             { MCP_MESSAGE_TYPE_NOTIFICATION, "MCP_MESSAGE_TYPE_NOTIFICATION", "notification" },
             { 0, NULL, NULL }
         };
-        GType g_define_type_id;
+        GType type_id;
 
-        g_define_type_id = g_enum_register_static ("McpMessageType", values);
-        g_once_init_leave (&g_define_type_id__volatile, g_define_type_id);
+        type_id = g_enum_register_static ("McpMessageType", values);
+        g_once_init_leave_pointer (&g_define_type_id, GSIZE_TO_POINTER (type_id));
     }
 
-    return g_define_type_id__volatile;
+    return (GType) GPOINTER_TO_SIZE (g_define_type_id);
 }
 
 /*
