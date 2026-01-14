@@ -211,7 +211,7 @@ TYPELIBDIR  := $(LIBDIR)/girepository-1.0
 # Targets
 #=============================================================================
 
-.PHONY: all clean test examples gir install uninstall docs info platform-check
+.PHONY: all clean test examples tools gir install uninstall docs info platform-check
 
 all: platform-check $(BUILDDIR)/$(LIB_SHARED) $(BUILDDIR)/$(LIB_STATIC) $(BUILDDIR)/$(PROJECT)-$(API_VERSION).pc
 
@@ -289,6 +289,14 @@ else
 	@echo "All tests passed."
 endif
 
+# Special rule for test-cli-common (requires mcp-common.o from tools/)
+$(BUILDDIR)/test-cli-common$(EXE_EXT): $(TESTDIR)/test-cli-common.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# Generic pattern rule for other tests
 $(BUILDDIR)/test-%$(EXE_EXT): $(TESTDIR)/test-%.c $(BUILDDIR)/$(LIB_SHARED)
 	@mkdir -p $(dir $@)
 ifeq ($(TARGET_PLATFORM),windows)
@@ -311,6 +319,84 @@ ifeq ($(TARGET_PLATFORM),windows)
 else
 	$(CC) $(CFLAGS) -o $@ $< -L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) -lm \
 		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+endif
+
+#=============================================================================
+# CLI Tools Configuration
+#=============================================================================
+
+TOOLSDIR    := tools
+
+# mcp-shell requires readline (check if available)
+READLINE_CFLAGS := $(shell $(PKG_CONFIG) --cflags readline 2>/dev/null)
+READLINE_LIBS   := $(shell $(PKG_CONFIG) --libs readline 2>/dev/null)
+HAVE_READLINE   := $(shell $(PKG_CONFIG) --exists readline 2>/dev/null && echo yes || echo no)
+
+#=============================================================================
+# CLI Tools Targets
+#=============================================================================
+
+ifeq ($(TARGET_PLATFORM),windows)
+tools:
+	@echo "CLI tools are not available for Windows cross-compilation"
+	@echo "(requires stdio transport which is excluded)"
+else
+
+ifeq ($(HAVE_READLINE),yes)
+SHELL_TARGET := $(BUILDDIR)/mcp-shell
+else
+SHELL_TARGET :=
+endif
+
+tools: platform-check $(BUILDDIR)/mcp-inspect $(BUILDDIR)/mcp-call \
+       $(BUILDDIR)/mcp-read $(BUILDDIR)/mcp-prompt $(SHELL_TARGET)
+ifeq ($(HAVE_READLINE),no)
+	@echo ""
+	@echo "Note: mcp-shell was not built (readline-devel not found)"
+	@echo "Install readline-devel to build the interactive shell:"
+	@echo "  sudo dnf install readline-devel"
+endif
+
+# Common object file (shared utilities)
+$(BUILDDIR)/mcp-common.o: $(TOOLSDIR)/mcp-common.c $(TOOLSDIR)/mcp-common.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -c -o $@ $<
+
+# mcp-inspect: Server inspection tool
+$(BUILDDIR)/mcp-inspect: $(TOOLSDIR)/mcp-inspect.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# mcp-call: Tool invocation
+$(BUILDDIR)/mcp-call: $(TOOLSDIR)/mcp-call.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# mcp-read: Resource reader
+$(BUILDDIR)/mcp-read: $(TOOLSDIR)/mcp-read.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# mcp-prompt: Prompt retrieval
+$(BUILDDIR)/mcp-prompt: $(TOOLSDIR)/mcp-prompt.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# mcp-shell: Interactive REPL (requires readline)
+$(BUILDDIR)/mcp-shell: $(TOOLSDIR)/mcp-shell.c $(BUILDDIR)/mcp-common.o $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -I$(TOOLSDIR) $(READLINE_CFLAGS) -o $@ $< $(BUILDDIR)/mcp-common.o \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) $(READLINE_LIBS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
 endif
 
 #=============================================================================
@@ -382,7 +468,7 @@ endif
 # Installation (Linux native only)
 #=============================================================================
 
-install: all
+install: all tools
 ifeq ($(TARGET_PLATFORM),windows)
 	@echo "Install target is for native Linux builds only."
 	@echo "For Windows, copy the DLL and headers manually."
@@ -394,12 +480,18 @@ else
 	install -d $(DESTDIR)$(PKGCONFIGDIR)
 	install -d $(DESTDIR)$(GIRDIR)
 	install -d $(DESTDIR)$(TYPELIBDIR)
+	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(BUILDDIR)/$(LIB_SHARED_VERSION) $(DESTDIR)$(LIBDIR)/
 	install -m 644 $(BUILDDIR)/$(LIB_STATIC) $(DESTDIR)$(LIBDIR)/
 	ln -sf $(LIB_SHARED_VERSION) $(DESTDIR)$(LIBDIR)/$(LIB_SHARED_SONAME)
 	ln -sf $(LIB_SHARED_SONAME) $(DESTDIR)$(LIBDIR)/$(LIB_SHARED)
 	install -m 644 $(HDRS) $(DESTDIR)$(INCLUDEDIR)/
 	install -m 644 $(BUILDDIR)/$(PROJECT)-$(API_VERSION).pc $(DESTDIR)$(PKGCONFIGDIR)/
+	install -m 755 $(BUILDDIR)/mcp-inspect $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILDDIR)/mcp-call $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILDDIR)/mcp-read $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILDDIR)/mcp-prompt $(DESTDIR)$(PREFIX)/bin/
+	install -m 755 $(BUILDDIR)/mcp-shell $(DESTDIR)$(PREFIX)/bin/
 	if [ -f $(BUILDDIR)/$(GIR_FILE) ]; then \
 		install -m 644 $(BUILDDIR)/$(GIR_FILE) $(DESTDIR)$(GIRDIR)/; \
 	fi
@@ -416,6 +508,11 @@ uninstall:
 	rm -f $(DESTDIR)$(PKGCONFIGDIR)/$(PROJECT)-$(API_VERSION).pc
 	rm -f $(DESTDIR)$(GIRDIR)/$(GIR_FILE)
 	rm -f $(DESTDIR)$(TYPELIBDIR)/$(TYPELIB)
+	rm -f $(DESTDIR)$(PREFIX)/bin/mcp-inspect
+	rm -f $(DESTDIR)$(PREFIX)/bin/mcp-call
+	rm -f $(DESTDIR)$(PREFIX)/bin/mcp-read
+	rm -f $(DESTDIR)$(PREFIX)/bin/mcp-prompt
+	rm -f $(DESTDIR)$(PREFIX)/bin/mcp-shell
 
 #=============================================================================
 # Documentation (placeholder)

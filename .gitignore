@@ -32,3 +32,5 @@ core.*
 # Backup files
 *.bak
 *.orig
+
+.cache/

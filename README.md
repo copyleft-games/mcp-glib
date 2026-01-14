@@ -245,6 +245,36 @@ make examples
 ./build/simple-client ./build/filesystem-server /path/to/directory
 ```
 
+## CLI Tools
+
+Command-line tools for interacting with MCP servers:
+
+| Tool | Description |
+|------|-------------|
+| `mcp-inspect` | Display server info, capabilities, tools, resources, prompts |
+| `mcp-call` | Call a specific tool with JSON arguments |
+| `mcp-read` | Read a resource by URI |
+| `mcp-prompt` | Get a prompt with arguments |
+| `mcp-shell` | Interactive REPL for exploring servers |
+
+Build and use:
+
+```bash
+# Build tools (requires readline-devel for mcp-shell)
+make tools
+
+# Inspect a server
+./build/mcp-inspect --stdio ./build/simple-server
+
+# Call a tool
+./build/mcp-call --stdio ./build/calculator-server -- add '{"a": 5, "b": 3}'
+
+# Interactive shell
+./build/mcp-shell --stdio ./build/simple-server
+```
+
+See [docs/cli-tools.md](docs/cli-tools.md) for complete documentation.
+
 ## Testing
 
 Run the test suite:
@@ -326,6 +356,7 @@ See [docs/](docs/) for detailed documentation:
 - [Building](docs/building.md) - Build instructions and dependencies
 - [Server Guide](docs/server-guide.md) - How to create MCP servers
 - [Client Guide](docs/client-guide.md) - How to create MCP clients
+- [CLI Tools](docs/cli-tools.md) - Command-line tools for MCP servers
 - [API Reference](docs/api-reference.md) - Complete API documentation
 
 ## References
