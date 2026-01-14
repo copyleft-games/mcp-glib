@@ -82,8 +82,12 @@ G_BEGIN_DECLS
  * Define MCP_NO_LIBSOUP to exclude these transports.
  */
 #ifndef MCP_NO_LIBSOUP
+/* Client transports */
 #include "mcp-http-transport.h"
 #include "mcp-websocket-transport.h"
+/* Server transports */
+#include "mcp-http-server-transport.h"
+#include "mcp-websocket-server-transport.h"
 #endif
 
 /* Provider interfaces */

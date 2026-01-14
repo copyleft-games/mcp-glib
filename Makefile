@@ -114,11 +114,15 @@ ifeq ($(TARGET_PLATFORM),windows)
     EXE_EXT     := .exe
     SHARED_LDFLAGS = -shared -Wl,--out-implib,$(BUILDDIR)/$(LIB_IMPORT)
     # Exclude transports not available via mingw cross-compilation:
-    # - HTTP/WebSocket: require libsoup (no mingw package)
+    # - HTTP/WebSocket client transports: require libsoup (no mingw package)
+    # - HTTP/WebSocket server transports: require libsoup (no mingw package)
     # - Stdio: requires gwin32inputstream.h (not in mingw-glib2 headers)
     EXCLUDED_SRCS := $(SRCDIR)/mcp-http-transport.c $(SRCDIR)/mcp-websocket-transport.c \
+                     $(SRCDIR)/mcp-http-server-transport.c $(SRCDIR)/mcp-websocket-server-transport.c \
                      $(SRCDIR)/mcp-stdio-transport.c
     EXCLUDED_TESTS := $(TESTDIR)/test-http-transport.c $(TESTDIR)/test-websocket-transport.c \
+                      $(TESTDIR)/test-http-server-transport.c $(TESTDIR)/test-websocket-server-transport.c \
+                      $(TESTDIR)/test-server-transport-integration.c \
                       $(TESTDIR)/test-transport-mock.c $(TESTDIR)/test-integration.c
     PLATFORM_CFLAGS := -DMCP_NO_LIBSOUP -DMCP_NO_STDIO_TRANSPORT
 else

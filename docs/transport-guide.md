@@ -8,8 +8,20 @@ Transports handle the low-level communication between MCP clients and servers. m
 
 - **McpTransport** - Abstract interface defining transport operations
 - **McpStdioTransport** - Communication via stdin/stdout (process-based)
-- **McpHttpTransport** - HTTP POST + Server-Sent Events
-- **McpWebSocketTransport** - Full-duplex WebSocket connection
+- **McpHttpTransport** - HTTP client transport (POST + SSE)
+- **McpHttpServerTransport** - HTTP server transport (accepts POST + SSE)
+- **McpWebSocketTransport** - WebSocket client transport
+- **McpWebSocketServerTransport** - WebSocket server transport
+
+### Transport Comparison
+
+| Transport | Direction | Protocol | Use Case |
+|-----------|-----------|----------|----------|
+| `McpStdioTransport` | Both | stdin/stdout | Local subprocess |
+| `McpHttpTransport` | Client | HTTP POST + SSE | Connect to HTTP server |
+| `McpHttpServerTransport` | Server | HTTP POST + SSE | Accept HTTP clients |
+| `McpWebSocketTransport` | Client | WebSocket | Connect to WS server |
+| `McpWebSocketServerTransport` | Server | WebSocket | Accept WS clients |
 
 ## McpTransport Interface
 
@@ -238,7 +250,172 @@ transport = mcp_websocket_transport_new_with_session (
 
 ---
 
+## HTTP Server Transport
+
+The HTTP server transport allows an MCP server to accept connections from clients over HTTP using POST + Server-Sent Events.
+
+### Creating HTTP Server Transport
+
+```c
+g_autoptr(McpHttpServerTransport) transport = NULL;
+
+/* Listen on port 8080 */
+transport = mcp_http_server_transport_new (8080);
+
+/* Or with specific host binding */
+transport = mcp_http_server_transport_new_full ("127.0.0.1", 8080);
+```
+
+### Configuration
+
+```c
+/* Set custom endpoint paths */
+mcp_http_server_transport_set_post_path (transport, "/mcp");
+mcp_http_server_transport_set_sse_path (transport, "/events");
+
+/* Enable authentication */
+mcp_http_server_transport_set_require_auth (transport, TRUE);
+mcp_http_server_transport_set_auth_token (transport, "secret-token");
+
+/* Enable TLS (HTTPS) */
+g_autoptr(GTlsCertificate) cert = g_tls_certificate_new_from_files (
+    "cert.pem", "key.pem", &error);
+mcp_http_server_transport_set_tls_certificate (transport, cert);
+```
+
+### Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `port` | guint | 0 | Port to listen on (0 = auto-assign) |
+| `host` | gchar* | NULL | Host/address to bind (NULL = all interfaces) |
+| `post-path` | gchar* | "/" | Path for POST requests |
+| `sse-path` | gchar* | "/sse" | Path for SSE connections |
+| `session-id` | gchar* | (auto) | Current session ID (read-only) |
+| `require-auth` | gboolean | FALSE | Require Bearer token |
+| `auth-token` | gchar* | NULL | Expected Bearer token |
+| `tls-certificate` | GTlsCertificate* | NULL | TLS certificate for HTTPS |
+
+### Usage with McpServer
+
+```c
+g_autoptr(McpServer) server = mcp_server_new ("my-server", "1.0.0");
+g_autoptr(McpHttpServerTransport) transport = mcp_http_server_transport_new (8080);
+
+mcp_server_set_transport (server, MCP_TRANSPORT (transport));
+mcp_server_start_async (server, NULL, on_started, NULL);
+```
+
+### Protocol Details
+
+1. Client connects to SSE endpoint (GET `/sse`)
+2. Server generates session ID, sends it in `Mcp-Session-Id` header
+3. Client sends JSON-RPC messages via POST to `/` with `Mcp-Session-Id` header
+4. Server sends responses/notifications via SSE stream
+
+### Example
+
+See `examples/http-server.c` for a complete example.
+
+---
+
+## WebSocket Server Transport
+
+The WebSocket server transport allows an MCP server to accept WebSocket connections for bidirectional communication.
+
+### Creating WebSocket Server Transport
+
+```c
+g_autoptr(McpWebSocketServerTransport) transport = NULL;
+
+/* Listen on port 8081 */
+transport = mcp_websocket_server_transport_new (8081);
+
+/* Or with host and custom path */
+transport = mcp_websocket_server_transport_new_full ("0.0.0.0", 8081, "/mcp");
+```
+
+### Configuration
+
+```c
+/* Set WebSocket path */
+mcp_websocket_server_transport_set_path (transport, "/ws");
+
+/* Set accepted subprotocols */
+const gchar * const protocols[] = { "mcp", "json-rpc", NULL };
+mcp_websocket_server_transport_set_protocols (transport, protocols);
+
+/* Set required origin */
+mcp_websocket_server_transport_set_origin (transport, "https://myapp.com");
+
+/* Enable authentication */
+mcp_websocket_server_transport_set_require_auth (transport, TRUE);
+mcp_websocket_server_transport_set_auth_token (transport, "secret-token");
+
+/* Configure keepalive (ping frames) */
+mcp_websocket_server_transport_set_keepalive_interval (transport, 30);  /* seconds */
+
+/* Enable TLS (WSS) */
+g_autoptr(GTlsCertificate) cert = g_tls_certificate_new_from_files (
+    "cert.pem", "key.pem", &error);
+mcp_websocket_server_transport_set_tls_certificate (transport, cert);
+```
+
+### Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `port` | guint | 0 | Port to listen on (0 = auto-assign) |
+| `host` | gchar* | NULL | Host/address to bind (NULL = all interfaces) |
+| `path` | gchar* | "/" | WebSocket endpoint path |
+| `protocols` | GStrv | NULL | Accepted subprotocols |
+| `origin` | gchar* | NULL | Required origin (NULL = any) |
+| `require-auth` | gboolean | FALSE | Require Bearer token |
+| `auth-token` | gchar* | NULL | Expected Bearer token |
+| `keepalive-interval` | guint | 30 | Ping interval in seconds (0 = disabled) |
+| `tls-certificate` | GTlsCertificate* | NULL | TLS certificate for WSS |
+
+### Usage with McpServer
+
+```c
+g_autoptr(McpServer) server = mcp_server_new ("my-server", "1.0.0");
+g_autoptr(McpWebSocketServerTransport) transport =
+    mcp_websocket_server_transport_new (8081);
+
+mcp_server_set_transport (server, MCP_TRANSPORT (transport));
+mcp_server_start_async (server, NULL, on_started, NULL);
+```
+
+### Single-Client Model
+
+Both HTTP and WebSocket server transports follow a single-client model:
+- Each transport instance handles one client connection at a time
+- Additional connection attempts are rejected until the current client disconnects
+- For multi-client scenarios, use multiple `McpServer` instances
+
+### Getting Actual Port
+
+When using port 0 (auto-assign), get the actual port after connecting:
+
+```c
+static void
+on_server_started (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    McpWebSocketServerTransport *transport = user_data;
+    guint actual_port = mcp_websocket_server_transport_get_actual_port (transport);
+    g_print ("Server listening on port %u\n", actual_port);
+}
+```
+
+### Example
+
+See `examples/websocket-server.c` for a complete example.
+
+---
+
 ## Choosing a Transport
+
+### Client Transports
 
 | Transport | Use Case | Pros | Cons |
 |-----------|----------|------|------|
@@ -246,12 +423,26 @@ transport = mcp_websocket_transport_new_with_session (
 | **HTTP** | Stateless APIs, load balancing | HTTP infrastructure | Higher latency |
 | **WebSocket** | Real-time, bidirectional | Low latency, full-duplex | Requires WS support |
 
+### Server Transports
+
+| Transport | Use Case | Pros | Cons |
+|-----------|----------|------|------|
+| **HTTP Server** | REST-like APIs, browser clients | Standard HTTP, SSE fallback | Unidirectional SSE |
+| **WebSocket Server** | Real-time apps, low latency | Full-duplex, efficient | Requires WS support |
+
 ### Recommendations
 
+**For Clients:**
 - **Local tools/servers**: Use `McpStdioTransport` with subprocess
 - **Cloud-hosted MCP**: Use `McpHttpTransport` or `McpWebSocketTransport`
 - **Real-time updates**: Prefer `McpWebSocketTransport`
 - **Behind proxies**: `McpHttpTransport` often works better
+
+**For Servers:**
+- **Network-accessible server**: Use `McpHttpServerTransport` or `McpWebSocketServerTransport`
+- **Browser-based clients**: Use `McpHttpServerTransport` (SSE works everywhere)
+- **Real-time bidirectional**: Use `McpWebSocketServerTransport`
+- **Local subprocess**: Use `McpStdioTransport` (works for both client and server)
 
 ---
 
