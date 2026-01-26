@@ -4,7 +4,7 @@ Command-line tools for interacting with MCP (Model Context Protocol) servers.
 
 ## Overview
 
-The mcp-glib project includes five CLI tools for inspecting and interacting with MCP servers:
+The mcp-glib project includes six CLI tools for inspecting and interacting with MCP servers:
 
 | Tool | Purpose |
 |------|---------|
@@ -13,8 +13,9 @@ The mcp-glib project includes five CLI tools for inspecting and interacting with
 | `mcp-read` | Read a resource by URI |
 | `mcp-prompt` | Get a prompt with arguments |
 | `mcp-shell` | Interactive REPL for exploring servers |
+| `mcp-remote-client` | Proxy stdio to remote HTTP/WebSocket MCP servers |
 
-All tools support connecting to MCP servers via stdio (subprocess), HTTP, or WebSocket transports.
+All tools (except `mcp-remote-client`) support connecting to MCP servers via stdio (subprocess), HTTP, or WebSocket transports. The `mcp-remote-client` tool acts as a bridge, allowing stdio-only clients to connect to remote servers.
 
 ## Installation
 
@@ -281,6 +282,77 @@ Goodbye!
 - Command history (in-memory, use up/down arrows)
 - Line editing (emacs/vi mode based on readline configuration)
 - Tab completion for commands
+
+---
+
+### mcp-remote-client
+
+Proxy tool that acts as a stdio MCP server while connecting to a remote HTTP or WebSocket MCP server. This enables tools that only support stdio transports (like Claude Desktop or other local MCP clients) to connect to remote MCP servers.
+
+**Usage:**
+```bash
+mcp-remote-client [OPTIONS]
+```
+
+**Options:**
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--http URL` | `-h` | Connect to HTTP MCP server at URL |
+| `--ws URL` | `-w` | Connect to WebSocket MCP server at URL |
+| `--token TOKEN` | `-t` | Authorization token for remote server |
+| `--quiet` | `-q` | Suppress status messages on stderr |
+| `--license` | | Show license information (AGPLv3) |
+
+**Note:** Exactly one transport option (`--http` or `--ws`) must be specified.
+
+**Examples:**
+```bash
+# Connect to an HTTP MCP server
+mcp-remote-client --http https://api.example.com/mcp
+
+# Connect to a WebSocket MCP server
+mcp-remote-client --ws wss://api.example.com/mcp
+
+# Connect with authentication
+mcp-remote-client --http https://api.example.com/mcp --token "Bearer your-api-key"
+
+# Quiet mode (no status messages on stderr)
+mcp-remote-client -q --ws wss://api.example.com/mcp
+```
+
+**How It Works:**
+
+1. The tool starts and listens on stdin for MCP JSON-RPC messages
+2. It establishes a connection to the specified remote server (HTTP or WebSocket)
+3. Messages received from stdin are forwarded to the remote server
+4. Responses from the remote server are forwarded to stdout
+5. The proxy continues until stdin is closed or the remote connection drops
+
+**Use Case: Claude Desktop Integration**
+
+Claude Desktop and similar tools often only support stdio MCP servers. With `mcp-remote-client`, you can configure them to connect to remote HTTP/WebSocket servers:
+
+```json
+{
+  "mcpServers": {
+    "remote-server": {
+      "command": "mcp-remote-client",
+      "args": [
+        "--http", "https://api.example.com/mcp",
+        "--token", "your-api-key"
+      ]
+    }
+  }
+}
+```
+
+**Exit Codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Clean shutdown (stdin closed or graceful disconnect) |
+| 1 | Connection or transport error |
 
 ## Exit Codes
 

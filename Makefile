@@ -353,7 +353,8 @@ SHELL_TARGET :=
 endif
 
 tools: platform-check $(BUILDDIR)/mcp-inspect $(BUILDDIR)/mcp-call \
-       $(BUILDDIR)/mcp-read $(BUILDDIR)/mcp-prompt $(SHELL_TARGET)
+       $(BUILDDIR)/mcp-read $(BUILDDIR)/mcp-prompt $(BUILDDIR)/mcp-remote-client \
+       $(SHELL_TARGET)
 ifeq ($(HAVE_READLINE),no)
 	@echo ""
 	@echo "Note: mcp-shell was not built (readline-devel not found)"
@@ -399,6 +400,13 @@ $(BUILDDIR)/mcp-shell: $(TOOLSDIR)/mcp-shell.c $(BUILDDIR)/mcp-common.o $(BUILDD
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -I$(TOOLSDIR) $(READLINE_CFLAGS) -o $@ $< $(BUILDDIR)/mcp-common.o \
 		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) $(READLINE_LIBS) \
+		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
+
+# mcp-remote-client: Proxy stdio MCP to remote HTTP/WebSocket server
+$(BUILDDIR)/mcp-remote-client: $(TOOLSDIR)/mcp-remote-client.c $(BUILDDIR)/$(LIB_SHARED)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ $< \
+		-L$(BUILDDIR) -l$(PROJECT)-$(API_VERSION) $(LDFLAGS) \
 		-Wl,-rpath,$(CURDIR)/$(BUILDDIR)
 
 endif
