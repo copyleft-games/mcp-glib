@@ -256,6 +256,7 @@ Command-line tools for interacting with MCP servers:
 | `mcp-read` | Read a resource by URI |
 | `mcp-prompt` | Get a prompt with arguments |
 | `mcp-shell` | Interactive REPL for exploring servers |
+| `mcp-remote-client` | Proxy stdio to remote HTTP/WebSocket MCP servers |
 
 Build and use:
 
@@ -271,6 +272,9 @@ make tools
 
 # Interactive shell
 ./build/mcp-shell --stdio ./build/simple-server
+
+# Bridge stdio to a remote HTTP server
+./build/mcp-remote-client --http https://api.example.com/mcp
 ```
 
 See [docs/cli-tools.md](docs/cli-tools.md) for complete documentation.
