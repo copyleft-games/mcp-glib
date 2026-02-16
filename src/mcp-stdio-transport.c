@@ -318,8 +318,21 @@ stdio_transport_connect_async (McpTransport        *transport,
     g_task_return_boolean (task, TRUE);
 
     /* Schedule the read loop to start in an idle callback so the
-     * connect callback can complete first */
-    g_idle_add (start_read_loop_idle, g_object_ref (self));
+     * connect callback can complete first.
+     * Use the thread-default GMainContext so this works when the
+     * transport runs on a dedicated thread with its own context
+     * (e.g. a Wayland compositor that uses wl_event_loop instead
+     * of the default GMainContext). */
+    {
+        GSource *idle_source;
+
+        idle_source = g_idle_source_new ();
+        g_source_set_callback (idle_source, start_read_loop_idle,
+                               g_object_ref (self), g_object_unref);
+        g_source_attach (idle_source,
+                         g_main_context_get_thread_default ());
+        g_source_unref (idle_source);
+    }
 }
 
 static gboolean
@@ -654,6 +667,7 @@ start_read_loop (McpStdioTransport *self)
 /*
  * Idle callback to start the read loop.
  * This is used to defer the read loop start until after connect completes.
+ * The GSource destroy notify handles g_object_unref.
  */
 static gboolean
 start_read_loop_idle (gpointer user_data)
@@ -661,7 +675,6 @@ start_read_loop_idle (gpointer user_data)
     McpStdioTransport *self = MCP_STDIO_TRANSPORT (user_data);
 
     start_read_loop (self);
-    g_object_unref (self);
 
     return G_SOURCE_REMOVE;
 }
