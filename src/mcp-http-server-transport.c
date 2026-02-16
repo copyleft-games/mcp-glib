@@ -48,6 +48,9 @@ struct _McpHttpServerTransport
 
     /* Transport state */
     McpTransportState state;
+
+    /* Streamable HTTP: pending POST response for inline reply */
+    SoupServerMessage *pending_post_msg;
 };
 
 static void mcp_http_server_transport_iface_init (McpTransportInterface *iface);
@@ -245,6 +248,15 @@ handle_sse_request (SoupServer        *server,
     /* Pause the message - we'll unpause when we have data to send */
     soup_server_message_pause (msg);
 
+    /* Send endpoint event so the client knows where to POST messages */
+    {
+        g_autofree gchar *endpoint_url = NULL;
+
+        endpoint_url = g_strdup_printf ("%s?sessionId=%s",
+                                         self->post_path, self->session_id);
+        send_sse_event (self, "endpoint", endpoint_url);
+    }
+
     g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SESSION_ID]);
 }
 
@@ -306,10 +318,15 @@ handle_post_request (SoupServer        *server,
         return;
     }
 
-    /* Validate session ID if we have an active SSE client */
+    /* Validate session ID if we have an active SSE client.
+     * Accept from Mcp-Session-Id header or sessionId query parameter. */
     if (self->client_connected && self->session_id != NULL)
     {
         session_id = soup_message_headers_get_one (request_headers, "Mcp-Session-Id");
+        if (session_id == NULL && query != NULL)
+        {
+            session_id = (const gchar *)g_hash_table_lookup (query, "sessionId");
+        }
         if (session_id == NULL || g_strcmp0 (session_id, self->session_id) != 0)
         {
             soup_server_message_set_status (msg, SOUP_STATUS_FORBIDDEN, NULL);
@@ -355,11 +372,30 @@ handle_post_request (SoupServer        *server,
     response_headers = soup_server_message_get_response_headers (msg);
     soup_message_headers_replace (response_headers, "Content-Type", "application/json");
 
-    /* Emit message-received signal */
+    /* Generate session ID on first request if we don't have one yet
+     * (streamable HTTP mode where no SSE client connects first). */
+    if (self->session_id == NULL)
+    {
+        self->session_id = generate_session_id ();
+        g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SESSION_ID]);
+    }
+    soup_message_headers_replace (response_headers, "Mcp-Session-Id", self->session_id);
+
+    /* Store pending POST so send_message_async can write the response
+     * directly into the HTTP body (streamable HTTP / no SSE client). */
+    self->pending_post_msg = msg;
+
+    /* Emit message-received signal -- handlers run synchronously,
+     * so send_message_async may clear pending_post_msg inline. */
     mcp_transport_emit_message_received (MCP_TRANSPORT (self), root);
 
-    /* Return 202 Accepted - responses will come via SSE */
-    soup_server_message_set_status (msg, SOUP_STATUS_ACCEPTED, NULL);
+    if (self->pending_post_msg != NULL)
+    {
+        /* No response was generated synchronously (notification, etc.).
+         * Return 202 Accepted -- response may come via SSE later. */
+        self->pending_post_msg = NULL;
+        soup_server_message_set_status (msg, SOUP_STATUS_ACCEPTED, NULL);
+    }
 }
 
 /*
@@ -555,17 +591,39 @@ mcp_http_server_transport_send_message_async (McpTransport        *transport,
         return;
     }
 
+    /* Serialize JSON */
+    generator = json_generator_new ();
+    json_generator_set_root (generator, message);
+    json_data = json_generator_to_data (generator, NULL);
+
+    /* Streamable HTTP: if a POST is waiting for an inline response, write
+     * the JSON directly into the HTTP response body instead of SSE. */
+    if (self->pending_post_msg != NULL)
+    {
+        SoupMessageHeaders *hdrs;
+        SoupMessageBody *body;
+
+        hdrs = soup_server_message_get_response_headers (self->pending_post_msg);
+        soup_message_headers_replace (hdrs, "Content-Type", "application/json");
+
+        body = soup_server_message_get_response_body (self->pending_post_msg);
+        soup_message_body_append (body, SOUP_MEMORY_COPY,
+                                  json_data, strlen (json_data));
+
+        soup_server_message_set_status (self->pending_post_msg,
+                                         SOUP_STATUS_OK, NULL);
+        self->pending_post_msg = NULL;
+
+        g_task_return_boolean (task, TRUE);
+        return;
+    }
+
     if (!self->client_connected)
     {
         g_task_return_new_error (task, MCP_ERROR, MCP_ERROR_TRANSPORT_ERROR,
                                   "No client connected");
         return;
     }
-
-    /* Serialize JSON */
-    generator = json_generator_new ();
-    json_generator_set_root (generator, message);
-    json_data = json_generator_to_data (generator, NULL);
 
     /* Send as SSE event */
     if (!send_sse_event (self, "message", json_data))
@@ -842,6 +900,7 @@ mcp_http_server_transport_init (McpHttpServerTransport *self)
     self->require_auth = FALSE;
     self->client_connected = FALSE;
     self->event_id_counter = 0;
+    self->pending_post_msg = NULL;
 }
 
 /* Public API */
