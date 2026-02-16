@@ -145,11 +145,15 @@ endif
 
 CSTD        := -std=gnu89
 WARNINGS    := -Wall -Wextra -Wno-unused-parameter
-DEBUG       := -g -O0
+ifeq ($(DEBUG),1)
+DEBUG_FLAGS := -g -O0
+else
+DEBUG_FLAGS :=
+endif
 PKG_CFLAGS  := $(shell $(PKG_CONFIG) --cflags $(PKG_DEPS))
 PKG_LIBS    := $(shell $(PKG_CONFIG) --libs $(PKG_DEPS))
 
-CFLAGS      := $(CSTD) $(WARNINGS) $(DEBUG) -fPIC -I./$(SRCDIR) $(SYSROOT_FLAGS) $(PLATFORM_CFLAGS) $(PKG_CFLAGS)
+CFLAGS      := $(CSTD) $(WARNINGS) $(DEBUG_FLAGS) -fPIC -I./$(SRCDIR) $(SYSROOT_FLAGS) $(PLATFORM_CFLAGS) $(PKG_CFLAGS)
 LDFLAGS     := $(SYSROOT_FLAGS) $(PKG_LIBS)
 
 #=============================================================================
@@ -418,6 +422,7 @@ endif
 $(BUILDDIR)/$(PROJECT)-$(API_VERSION).pc: $(PROJECT)-$(API_VERSION).pc.in
 	@mkdir -p $(dir $@)
 	sed -e 's|@PREFIX@|$(PREFIX)|g' \
+	    -e 's|@LIBDIR@|$(LIBDIR)|g' \
 	    -e 's|@VERSION@|$(VERSION)|g' \
 	    -e 's|@API_VERSION@|$(API_VERSION)|g' \
 	    $< > $@

@@ -1,6 +1,6 @@
 prefix=@PREFIX@
 exec_prefix=${prefix}
-libdir=${prefix}/lib
+libdir=@LIBDIR@
 includedir=${prefix}/include/mcp-glib-@API_VERSION@
 
 Name: mcp-glib
