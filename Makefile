@@ -117,13 +117,16 @@ ifeq ($(TARGET_PLATFORM),windows)
     # - HTTP/WebSocket client transports: require libsoup (no mingw package)
     # - HTTP/WebSocket server transports: require libsoup (no mingw package)
     # - Stdio: requires gwin32inputstream.h (not in mingw-glib2 headers)
+    # - Unix socket server: requires gio-unix-2.0 and McpStdioTransport
     EXCLUDED_SRCS := $(SRCDIR)/mcp-http-transport.c $(SRCDIR)/mcp-websocket-transport.c \
                      $(SRCDIR)/mcp-http-server-transport.c $(SRCDIR)/mcp-websocket-server-transport.c \
-                     $(SRCDIR)/mcp-stdio-transport.c
+                     $(SRCDIR)/mcp-stdio-transport.c \
+                     $(SRCDIR)/mcp-unix-socket-server.c
     EXCLUDED_TESTS := $(TESTDIR)/test-http-transport.c $(TESTDIR)/test-websocket-transport.c \
                       $(TESTDIR)/test-http-server-transport.c $(TESTDIR)/test-websocket-server-transport.c \
                       $(TESTDIR)/test-server-transport-integration.c \
-                      $(TESTDIR)/test-transport-mock.c $(TESTDIR)/test-integration.c
+                      $(TESTDIR)/test-transport-mock.c $(TESTDIR)/test-integration.c \
+                      $(TESTDIR)/test-unix-socket-server.c
     PLATFORM_CFLAGS := -DMCP_NO_LIBSOUP -DMCP_NO_STDIO_TRANSPORT
 else
     # Linux: SO with versioning, full feature set

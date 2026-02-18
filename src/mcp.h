@@ -74,6 +74,8 @@ G_BEGIN_DECLS
  */
 #ifndef MCP_NO_STDIO_TRANSPORT
 #include "mcp-stdio-transport.h"
+/* Unix socket server requires gio-unix-2.0 and McpStdioTransport */
+#include "mcp-unix-socket-server.h"
 #endif
 
 /*
