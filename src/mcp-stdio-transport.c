@@ -160,18 +160,16 @@ mcp_stdio_transport_dispose (GObject *object)
 
     if (self->subprocess != NULL)
     {
-        /* Terminate subprocess if still running */
-        if (g_subprocess_get_if_exited (self->subprocess) == FALSE &&
-            g_subprocess_get_if_signaled (self->subprocess) == FALSE)
-        {
+        /* Unconditionally terminate the subprocess on dispose.
+         * g_subprocess_get_if_exited() requires pid==0 (already reaped),
+         * so calling it on a running process triggers a GLib assertion.
+         * Just send the signal -- it is a no-op if the process has already
+         * exited and safe to call at any time. */
 #ifdef _WIN32
-            /* Windows: Use force exit - no SIGTERM equivalent */
-            g_subprocess_force_exit (self->subprocess);
+        g_subprocess_force_exit (self->subprocess);
 #else
-            /* Unix: Send SIGTERM for graceful shutdown */
-            g_subprocess_send_signal (self->subprocess, SIGTERM);
+        g_subprocess_send_signal (self->subprocess, SIGTERM);
 #endif
-        }
         g_clear_object (&self->subprocess);
     }
 
@@ -382,20 +380,15 @@ stdio_transport_disconnect_async (McpTransport        *transport,
         g_input_stream_close (self->input, NULL, NULL);
     }
 
-    /* Terminate subprocess if any */
+    /* Terminate subprocess if any.  See dispose for why we skip the
+     * g_subprocess_get_if_exited() check. */
     if (self->subprocess != NULL)
     {
-        if (g_subprocess_get_if_exited (self->subprocess) == FALSE &&
-            g_subprocess_get_if_signaled (self->subprocess) == FALSE)
-        {
 #ifdef _WIN32
-            /* Windows: Use force exit - no SIGTERM equivalent */
-            g_subprocess_force_exit (self->subprocess);
+        g_subprocess_force_exit (self->subprocess);
 #else
-            /* Unix: Send SIGTERM for graceful shutdown */
-            g_subprocess_send_signal (self->subprocess, SIGTERM);
+        g_subprocess_send_signal (self->subprocess, SIGTERM);
 #endif
-        }
     }
 
     set_state (self, MCP_TRANSPORT_STATE_DISCONNECTED);
