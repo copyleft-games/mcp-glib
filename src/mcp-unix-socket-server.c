@@ -341,17 +341,50 @@ mcp_unix_socket_server_start (
 	self->socket_service = g_socket_service_new ();
 
 	address = (GSocketAddress *)g_unix_socket_address_new (self->socket_path);
-	if (!g_socket_listener_add_address (
-		    G_SOCKET_LISTENER (self->socket_service),
-		    address,
-		    G_SOCKET_TYPE_STREAM,
-		    G_SOCKET_PROTOCOL_DEFAULT,
-		    NULL,   /* source_object */
-		    NULL,   /* effective_address */
-		    error))
+
+	/* Create the listener socket manually so we can set non-blocking
+	 * mode.  GSocketService's internal accept handler calls
+	 * g_socket_accept(), which blocks indefinitely on a blocking
+	 * socket if there is a spurious wakeup (no actual pending
+	 * connection).  This happens when the GSocketService is
+	 * integrated into a custom event loop (e.g. Emacs pselect)
+	 * rather than g_main_loop_run().  Non-blocking mode makes
+	 * g_socket_accept() return G_IO_ERROR_WOULD_BLOCK immediately,
+	 * which GLib handles gracefully by retrying on the next poll. */
 	{
-		g_clear_object (&self->socket_service);
-		return FALSE;
+		g_autoptr(GSocket) listen_socket = NULL;
+
+		listen_socket = g_socket_new (G_SOCKET_FAMILY_UNIX,
+		                              G_SOCKET_TYPE_STREAM,
+		                              G_SOCKET_PROTOCOL_DEFAULT,
+		                              error);
+		if (listen_socket == NULL)
+		{
+			g_clear_object (&self->socket_service);
+			return FALSE;
+		}
+
+		g_socket_set_blocking (listen_socket, FALSE);
+
+		if (!g_socket_bind (listen_socket, address, TRUE, error))
+		{
+			g_clear_object (&self->socket_service);
+			return FALSE;
+		}
+
+		if (!g_socket_listen (listen_socket, error))
+		{
+			g_clear_object (&self->socket_service);
+			return FALSE;
+		}
+
+		if (!g_socket_listener_add_socket (
+			    G_SOCKET_LISTENER (self->socket_service),
+			    listen_socket, NULL, error))
+		{
+			g_clear_object (&self->socket_service);
+			return FALSE;
+		}
 	}
 
 	g_signal_connect (self->socket_service, "incoming",
