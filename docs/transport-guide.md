@@ -12,6 +12,7 @@ Transports handle the low-level communication between MCP clients and servers. m
 - **McpHttpServerTransport** - HTTP server transport (accepts POST + SSE)
 - **McpWebSocketTransport** - WebSocket client transport
 - **McpWebSocketServerTransport** - WebSocket server transport
+- **McpMuxTransport** - I/O-free multiplexed transport; the *host* supplies framing
 
 ### Transport Comparison
 
@@ -22,6 +23,7 @@ Transports handle the low-level communication between MCP clients and servers. m
 | `McpHttpServerTransport` | Server | HTTP POST + SSE | Accept HTTP clients |
 | `McpWebSocketTransport` | Client | WebSocket | Connect to WS server |
 | `McpWebSocketServerTransport` | Server | WebSocket | Accept WS clients |
+| `McpMuxTransport` | Both | _host-supplied_ | Tunnel MCP inside another protocol |
 
 ## McpTransport Interface
 
@@ -413,6 +415,159 @@ See `examples/websocket-server.c` for a complete example.
 
 ---
 
+## Multiplexed (Mux) Transport
+
+`McpMuxTransport` is a transport implementation that owns **no I/O of
+its own**.  Outbound JSON frames are pushed to a user-supplied
+callback; inbound JSON frames are fed in via
+`mcp_mux_transport_dispatch_frame()`.  The host is responsible for
+the actual carrier.
+
+This makes it possible to *tunnel* an MCP session through any wire
+that can carry framed JSON — a WebSocket that's already carrying
+other application traffic, a SOCKS-style multiplexed pipe, a chat
+protocol's "agent" channel, even a single GBytes-at-a-time function
+call sequence in a test.
+
+### When to use it
+
+- The carrier is **owned by another subsystem** (e.g. a chat-bridge
+  WebSocket) and you want MCP frames to ride alongside other
+  application frames.
+- You want to **test** an `McpClient`/`McpServer` pair without
+  spawning a subprocess or opening a real socket — two `McpMuxTransport`
+  instances wired back-to-back run the full handshake in a single
+  process, on a single thread.
+- You're **embedding MCP** in a protocol that itself negotiates an
+  envelope (libreclaw's bridge subsystem does exactly this — see
+  `deps/libreclaw/docs/bridge.md`).
+
+### Public API
+
+```c
+McpMuxTransport *mcp_mux_transport_new           (GMainContext   *context);
+
+typedef void (*McpMuxSendFunc) (McpMuxTransport *self,
+                                JsonNode        *frame,
+                                gpointer         user_data);
+
+void mcp_mux_transport_set_send_callback         (McpMuxTransport *self,
+                                                  McpMuxSendFunc   callback,
+                                                  gpointer         user_data,
+                                                  GDestroyNotify   destroy);
+
+void mcp_mux_transport_dispatch_frame            (McpMuxTransport *self,
+                                                  JsonNode        *frame);
+
+void mcp_mux_transport_set_connected             (McpMuxTransport *self,
+                                                  gboolean         connected);
+
+void mcp_mux_transport_emit_error_from_host      (McpMuxTransport *self,
+                                                  GError          *error);
+
+GMainContext *mcp_mux_transport_get_context      (McpMuxTransport *self);
+```
+
+### Lifecycle
+
+1. **Construct** with the `GMainContext` you want inbound frames
+   dispatched on (or `NULL` for the thread-default at construction
+   time).
+2. **Set the send callback** — required before any `send_message_async`
+   call.  Replacing the callback runs the previous data's destroy
+   notify; finalize also runs it.
+3. **Flip to connected** with `mcp_mux_transport_set_connected(self,
+   TRUE)` once the underlying carrier is ready to accept frames.
+   Until then, `send_message_async` fails with `MCP_ERROR_TRANSPORT_ERROR`
+   and `dispatch_frame` silently drops.
+4. **Hand to an `McpClient` or `McpServer`** via
+   `mcp_*_set_transport()`.  Standard MCP machinery does the rest.
+5. **Tear down** by flipping connected to `FALSE` or unrefing the
+   transport.
+
+### Threading
+
+`mcp_mux_transport_dispatch_frame()` is **thread-safe**.  Frames
+pushed in from any thread are trampolined onto the transport's
+`GMainContext` via `g_main_context_invoke_full`, so the
+`message-received` signal always fires on the context the host
+expects.  This lets a libsoup WebSocket callback (which runs on the
+main thread) and a worker thread share the same transport without
+the host writing its own marshalling.
+
+### Wiring two muxes back-to-back
+
+```c
+static void
+forward (McpMuxTransport *self, JsonNode *frame, gpointer user_data)
+{
+    McpMuxTransport *peer = user_data;
+    mcp_mux_transport_dispatch_frame (peer, frame);
+}
+
+McpMuxTransport *a = mcp_mux_transport_new (mctx);
+McpMuxTransport *b = mcp_mux_transport_new (mctx);
+
+mcp_mux_transport_set_send_callback (a, forward, b, NULL);
+mcp_mux_transport_set_send_callback (b, forward, a, NULL);
+mcp_mux_transport_set_connected     (a, TRUE);
+mcp_mux_transport_set_connected     (b, TRUE);
+
+/* Now hand `a` to an McpClient and `b` to an McpServer — they will
+ * complete the initialize handshake and exchange tool calls without
+ * any I/O at all. */
+```
+
+### Embedding inside a larger protocol
+
+The typical embedding pattern: the host carrier reads a frame off the
+wire, decides it's an MCP frame (e.g. by a wrapping envelope tag),
+strips the envelope, and calls `dispatch_frame()`.  Conversely, in
+the send callback the host wraps the frame in its envelope and
+writes to the wire.
+
+```c
+/* Host's WebSocket message handler. */
+static void
+on_ws_message (SoupWebsocketConnection *conn,
+               gint data_type, GBytes *bytes, gpointer user_data)
+{
+    HostState *h = user_data;
+    g_autoptr(JsonParser) p = json_parser_new ();
+    /* ... parse host envelope ... */
+    JsonNode *inner_mcp_frame = host_envelope_extract_mcp (root);
+    if (inner_mcp_frame != NULL)
+        mcp_mux_transport_dispatch_frame (h->mux, inner_mcp_frame);
+}
+
+/* Host's send callback: wrap and ship. */
+static void
+host_send (McpMuxTransport *self, JsonNode *frame, gpointer user_data)
+{
+    HostState *h = user_data;
+    g_autoptr(JsonNode) envelope = host_envelope_wrap (frame);
+    g_autofree gchar *str = json_to_string (envelope, FALSE);
+    soup_websocket_connection_send_text (h->conn, str);
+}
+```
+
+### Error reporting
+
+If the host detects a carrier-level fault (peer reset, malformed
+frame, etc.) it should call:
+
+```c
+g_autoptr(GError) e = g_error_new_literal (MCP_ERROR,
+                                           MCP_ERROR_TRANSPORT_ERROR,
+                                           "carrier reset");
+mcp_mux_transport_emit_error_from_host (mux, e);
+```
+
+This emits the standard `McpTransport::error` signal so any
+attached `McpClient`/`McpServer` can react.
+
+---
+
 ## Choosing a Transport
 
 ### Client Transports
@@ -422,6 +577,7 @@ See `examples/websocket-server.c` for a complete example.
 | **Stdio** | Local subprocess servers | Simple, no network | Single process only |
 | **HTTP** | Stateless APIs, load balancing | HTTP infrastructure | Higher latency |
 | **WebSocket** | Real-time, bidirectional | Low latency, full-duplex | Requires WS support |
+| **Mux** | Tunnel through host-owned carrier | Zero I/O surface; pure passthrough | Host must do framing |
 
 ### Server Transports
 
@@ -429,6 +585,7 @@ See `examples/websocket-server.c` for a complete example.
 |-----------|----------|------|------|
 | **HTTP Server** | REST-like APIs, browser clients | Standard HTTP, SSE fallback | Unidirectional SSE |
 | **WebSocket Server** | Real-time apps, low latency | Full-duplex, efficient | Requires WS support |
+| **Mux** | Tunnel through host-owned carrier | Same as client side | Host must do framing |
 
 ### Recommendations
 
@@ -437,12 +594,14 @@ See `examples/websocket-server.c` for a complete example.
 - **Cloud-hosted MCP**: Use `McpHttpTransport` or `McpWebSocketTransport`
 - **Real-time updates**: Prefer `McpWebSocketTransport`
 - **Behind proxies**: `McpHttpTransport` often works better
+- **Tunneled inside another protocol**: Use `McpMuxTransport`
 
 **For Servers:**
 - **Network-accessible server**: Use `McpHttpServerTransport` or `McpWebSocketServerTransport`
 - **Browser-based clients**: Use `McpHttpServerTransport` (SSE works everywhere)
 - **Real-time bidirectional**: Use `McpWebSocketServerTransport`
 - **Local subprocess**: Use `McpStdioTransport` (works for both client and server)
+- **Embedded inside a host that owns its own wire**: Use `McpMuxTransport`
 
 ---
 

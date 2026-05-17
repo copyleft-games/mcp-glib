@@ -67,6 +67,9 @@ G_BEGIN_DECLS
 /* Transport */
 #include "mcp-transport.h"
 
+/* Multiplexed transport (no I/O of its own — host supplies framing). */
+#include "mcp-mux-transport.h"
+
 /*
  * Stdio transport requires platform-specific stream APIs.
  * On Windows cross-compilation via mingw, gwin32inputstream.h is unavailable.

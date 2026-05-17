@@ -495,6 +495,63 @@ McpStdioTransport *mcp_stdio_transport_new_subprocess_simple (const gchar *comma
 
 ---
 
+## McpMuxTransport
+
+I/O-free multiplexed transport.  Outbound frames go through a host
+callback; inbound frames are pushed in by the host.  Used to tunnel
+MCP inside another protocol (e.g. a chat-bridge WebSocket).
+See the [Transport Guide](transport-guide.md#multiplexed-mux-transport)
+for the full embedding pattern.
+
+### Constructors
+
+```c
+McpMuxTransport *mcp_mux_transport_new (GMainContext *context);
+```
+
+### Send-side wiring
+
+```c
+typedef void (*McpMuxSendFunc) (McpMuxTransport *self,
+                                JsonNode        *frame,
+                                gpointer         user_data);
+
+void mcp_mux_transport_set_send_callback (McpMuxTransport *self,
+                                          McpMuxSendFunc   callback,
+                                          gpointer         user_data,
+                                          GDestroyNotify   destroy);
+```
+
+The previous callback's destroy notify runs on replacement and on
+transport finalize.
+
+### Receive-side wiring
+
+```c
+/* Push an inbound frame into the transport.  Safe from any thread —
+ * the resulting `message-received` signal fires on the transport's
+ * GMainContext. */
+void mcp_mux_transport_dispatch_frame (McpMuxTransport *self,
+                                        JsonNode        *frame);
+```
+
+Frames pushed while the transport is `DISCONNECTED` are silently
+dropped.
+
+### State + error
+
+```c
+void mcp_mux_transport_set_connected        (McpMuxTransport *self,
+                                              gboolean         connected);
+
+void mcp_mux_transport_emit_error_from_host (McpMuxTransport *self,
+                                              GError          *error);
+
+GMainContext *mcp_mux_transport_get_context (McpMuxTransport *self);
+```
+
+---
+
 ## McpSession
 
 Base session class (inherited by McpServer and McpClient).

@@ -8,6 +8,8 @@ A GLib/GObject implementation of the [Model Context Protocol (MCP)](https://mode
 - **MCP Client Support** - Connect to and interact with MCP servers
 - **Tasks API** - Experimental support for long-running tool operations
 - **Stdio Transport** - Process-based communication via stdin/stdout
+- **HTTP / WebSocket Transports** - Client and server variants over libsoup-3
+- **Mux Transport** - I/O-free multiplexed transport for tunneling MCP inside another protocol
 - **GObject Introspection** - First-class support for language bindings (Python, JavaScript, etc.)
 - **Async Operations** - Built on libdex for composable async futures
 - **Cross-Platform** - Windows DLL via mingw cross-compilation
