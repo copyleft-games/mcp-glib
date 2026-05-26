@@ -1,14 +1,11 @@
-# API Reference
-
+* API Reference
 Complete API reference for mcp-glib.
 
-## Enumerations
-
-### McpErrorCode
-
+** Enumerations
+*** McpErrorCode
 Error codes for MCP operations.
 
-```c
+#+begin_src C
 typedef enum {
     MCP_ERROR_PARSE_ERROR        = -32700,  /* JSON parse error */
     MCP_ERROR_INVALID_REQUEST    = -32600,  /* Invalid JSON-RPC request */
@@ -19,13 +16,12 @@ typedef enum {
     MCP_ERROR_TRANSPORT_ERROR    = -32001,  /* Transport layer error */
     MCP_ERROR_TIMEOUT            = -32002   /* Request timed out */
 } McpErrorCode;
-```
+#+end_src
 
-### McpTransportState
-
+*** McpTransportState
 Transport connection states.
 
-```c
+#+begin_src C
 typedef enum {
     MCP_TRANSPORT_STATE_DISCONNECTED,   /* Not connected */
     MCP_TRANSPORT_STATE_CONNECTING,     /* Connection in progress */
@@ -33,24 +29,22 @@ typedef enum {
     MCP_TRANSPORT_STATE_DISCONNECTING,  /* Disconnection in progress */
     MCP_TRANSPORT_STATE_ERROR           /* Error state */
 } McpTransportState;
-```
+#+end_src
 
-### McpRole
-
+*** McpRole
 Message role in prompts.
 
-```c
+#+begin_src C
 typedef enum {
     MCP_ROLE_USER,      /* User message */
     MCP_ROLE_ASSISTANT  /* Assistant message */
 } McpRole;
-```
+#+end_src
 
-### McpLogLevel
-
+*** McpLogLevel
 Logging levels.
 
-```c
+#+begin_src C
 typedef enum {
     MCP_LOG_LEVEL_DEBUG,
     MCP_LOG_LEVEL_INFO,
@@ -61,13 +55,12 @@ typedef enum {
     MCP_LOG_LEVEL_ALERT,
     MCP_LOG_LEVEL_EMERGENCY
 } McpLogLevel;
-```
+#+end_src
 
-### McpTaskStatus
-
+*** McpTaskStatus
 Task status for long-running operations.
 
-```c
+#+begin_src C
 typedef enum {
     MCP_TASK_STATUS_WORKING,        /* Task is running */
     MCP_TASK_STATUS_INPUT_REQUIRED, /* Waiting for input */
@@ -75,33 +68,29 @@ typedef enum {
     MCP_TASK_STATUS_FAILED,         /* Task failed */
     MCP_TASK_STATUS_CANCELLED       /* Task was cancelled */
 } McpTaskStatus;
-```
+#+end_src
 
----
+--------------
 
-## McpServer
-
+** McpServer
 MCP server implementation.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpServer *mcp_server_new (const gchar *name, const gchar *version);
-```
+#+end_src
 
 Creates a new MCP server.
 
-### Properties
+*** Properties
+| Property       | Type   | Description         |
+|----------------+--------+---------------------|
+| =name=         | gchar* | Server name         |
+| =version=      | gchar* | Server version      |
+| =instructions= | gchar* | Instructions for AI |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | gchar* | Server name |
-| `version` | gchar* | Server version |
-| `instructions` | gchar* | Instructions for AI |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 /* Configuration */
 void mcp_server_set_instructions (McpServer *self, const gchar *instructions);
 const gchar *mcp_server_get_instructions (McpServer *self);
@@ -143,18 +132,16 @@ gboolean mcp_server_start_finish (McpServer *self, GAsyncResult *result,
 /* Logging */
 void mcp_server_emit_log (McpServer *self, McpLogLevel level,
                           const gchar *message, const gchar *logger);
-```
+#+end_src
 
-### Signals
+*** Signals
+| Signal                | Description                              |
+|-----------------------+------------------------------------------|
+| =client-initialized=  | Client connected and completed handshake |
+| =client-disconnected= | Client disconnected                      |
 
-| Signal | Description |
-|--------|-------------|
-| `client-initialized` | Client connected and completed handshake |
-| `client-disconnected` | Client disconnected |
-
-### Handler Types
-
-```c
+*** Handler Types
+#+begin_src C
 /* Tool handler */
 typedef McpToolResult *(*McpToolHandler) (McpServer *server,
                                           const gchar *name,
@@ -171,32 +158,28 @@ typedef McpPromptResult *(*McpPromptHandler) (McpServer *server,
                                               const gchar *name,
                                               GHashTable *arguments,
                                               gpointer user_data);
-```
+#+end_src
 
----
+--------------
 
-## McpClient
-
+** McpClient
 MCP client implementation.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpClient *mcp_client_new (const gchar *name, const gchar *version);
-```
+#+end_src
 
 Creates a new MCP client.
 
-### Properties
+*** Properties
+| Property  | Type   | Description    |
+|-----------+--------+----------------|
+| =name=    | gchar* | Client name    |
+| =version= | gchar* | Client version |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | gchar* | Client name |
-| `version` | gchar* | Client version |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 /* Configuration */
 void mcp_client_set_transport (McpClient *self, McpTransport *transport);
 McpClientCapabilities *mcp_client_get_capabilities (McpClient *self);
@@ -246,152 +229,132 @@ void mcp_client_get_prompt_async (McpClient *self, const gchar *name,
                                   GAsyncReadyCallback callback, gpointer user_data);
 McpPromptResult *mcp_client_get_prompt_finish (McpClient *self, GAsyncResult *result,
                                                GError **error);
-```
+#+end_src
 
-### Signals
+*** Signals
+| Signal              | Description                 |
+|---------------------+-----------------------------|
+| =tools-changed=     | Server tools changed        |
+| =resources-changed= | Server resources changed    |
+| =prompts-changed=   | Server prompts changed      |
+| =resource-updated=  | Subscribed resource updated |
 
-| Signal | Description |
-|--------|-------------|
-| `tools-changed` | Server tools changed |
-| `resources-changed` | Server resources changed |
-| `prompts-changed` | Server prompts changed |
-| `resource-updated` | Subscribed resource updated |
+--------------
 
----
-
-## McpTool
-
+** McpTool
 Tool definition.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpTool *mcp_tool_new (const gchar *name, const gchar *description);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property      | Type   | Description      |
+|---------------+--------+------------------|
+| =name=        | gchar* | Tool name        |
+| =description= | gchar* | Tool description |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | gchar* | Tool name |
-| `description` | gchar* | Tool description |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_tool_get_name (McpTool *self);
 const gchar *mcp_tool_get_description (McpTool *self);
 void mcp_tool_set_input_schema (McpTool *self, JsonNode *schema);
 JsonNode *mcp_tool_get_input_schema (McpTool *self);
-```
+#+end_src
 
----
+--------------
 
-## McpResource
-
+** McpResource
 Resource definition.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpResource *mcp_resource_new (const gchar *uri, const gchar *name);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property      | Type   | Description          |
+|---------------+--------+----------------------|
+| =uri=         | gchar* | Resource URI         |
+| =name=        | gchar* | Resource name        |
+| =description= | gchar* | Resource description |
+| =mime-type=   | gchar* | MIME type            |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `uri` | gchar* | Resource URI |
-| `name` | gchar* | Resource name |
-| `description` | gchar* | Resource description |
-| `mime-type` | gchar* | MIME type |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_resource_get_uri (McpResource *self);
 const gchar *mcp_resource_get_name (McpResource *self);
 void mcp_resource_set_description (McpResource *self, const gchar *description);
 const gchar *mcp_resource_get_description (McpResource *self);
 void mcp_resource_set_mime_type (McpResource *self, const gchar *mime_type);
 const gchar *mcp_resource_get_mime_type (McpResource *self);
-```
+#+end_src
 
----
+--------------
 
-## McpResourceTemplate
-
+** McpResourceTemplate
 Resource URI template.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpResourceTemplate *mcp_resource_template_new (const gchar *uri_template,
                                                  const gchar *name);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property       | Type   | Description             |
+|----------------+--------+-------------------------|
+| =uri-template= | gchar* | URI template (RFC 6570) |
+| =name=         | gchar* | Template name           |
+| =description=  | gchar* | Template description    |
+| =mime-type=    | gchar* | Default MIME type       |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `uri-template` | gchar* | URI template (RFC 6570) |
-| `name` | gchar* | Template name |
-| `description` | gchar* | Template description |
-| `mime-type` | gchar* | Default MIME type |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_resource_template_get_uri_template (McpResourceTemplate *self);
 const gchar *mcp_resource_template_get_name (McpResourceTemplate *self);
 void mcp_resource_template_set_description (McpResourceTemplate *self, const gchar *desc);
 void mcp_resource_template_set_mime_type (McpResourceTemplate *self, const gchar *mime);
-```
+#+end_src
 
----
+--------------
 
-## McpPrompt
-
+** McpPrompt
 Prompt definition.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpPrompt *mcp_prompt_new (const gchar *name, const gchar *description);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property      | Type   | Description        |
+|---------------+--------+--------------------|
+| =name=        | gchar* | Prompt name        |
+| =description= | gchar* | Prompt description |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | gchar* | Prompt name |
-| `description` | gchar* | Prompt description |
-
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_prompt_get_name (McpPrompt *self);
 const gchar *mcp_prompt_get_description (McpPrompt *self);
 void mcp_prompt_add_argument_full (McpPrompt *self, const gchar *name,
                                    const gchar *description, gboolean required);
 GList *mcp_prompt_get_arguments (McpPrompt *self);
-```
+#+end_src
 
----
+--------------
 
-## McpToolResult (Boxed)
-
+** McpToolResult (Boxed)
 Result from a tool invocation.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpToolResult *mcp_tool_result_new (gboolean is_error);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 void mcp_tool_result_add_text (McpToolResult *self, const gchar *text);
 void mcp_tool_result_add_image (McpToolResult *self, const gchar *data,
                                  const gchar *mime_type);
@@ -399,17 +362,15 @@ gboolean mcp_tool_result_get_is_error (McpToolResult *self);
 JsonArray *mcp_tool_result_get_content (McpToolResult *self);
 McpToolResult *mcp_tool_result_ref (McpToolResult *self);
 void mcp_tool_result_unref (McpToolResult *self);
-```
+#+end_src
 
----
+--------------
 
-## McpResourceContents (Boxed)
-
+** McpResourceContents (Boxed)
 Content from a resource read.
 
-### Constructors
-
-```c
+*** Constructors
+#+begin_src C
 /* Text content */
 McpResourceContents *mcp_resource_contents_new_text (const gchar *uri,
                                                       const gchar *text,
@@ -419,99 +380,83 @@ McpResourceContents *mcp_resource_contents_new_text (const gchar *uri,
 McpResourceContents *mcp_resource_contents_new_blob (const gchar *uri,
                                                       const gchar *blob,
                                                       const gchar *mime_type);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_resource_contents_get_uri (McpResourceContents *self);
 const gchar *mcp_resource_contents_get_mime_type (McpResourceContents *self);
 const gchar *mcp_resource_contents_get_text (McpResourceContents *self);
 const gchar *mcp_resource_contents_get_blob (McpResourceContents *self);
 McpResourceContents *mcp_resource_contents_ref (McpResourceContents *self);
 void mcp_resource_contents_unref (McpResourceContents *self);
-```
+#+end_src
 
----
+--------------
 
-## McpPromptResult (Boxed)
-
+** McpPromptResult (Boxed)
 Result from a prompt get.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpPromptResult *mcp_prompt_result_new (const gchar *description);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_prompt_result_get_description (McpPromptResult *self);
 void mcp_prompt_result_add_message (McpPromptResult *self, McpPromptMessage *message);
 GList *mcp_prompt_result_get_messages (McpPromptResult *self);
 McpPromptResult *mcp_prompt_result_ref (McpPromptResult *self);
 void mcp_prompt_result_unref (McpPromptResult *self);
-```
+#+end_src
 
----
+--------------
 
-## McpPromptMessage (Boxed)
-
+** McpPromptMessage (Boxed)
 Message in a prompt result.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpPromptMessage *mcp_prompt_message_new (McpRole role);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 McpRole mcp_prompt_message_get_role (McpPromptMessage *self);
 void mcp_prompt_message_add_text (McpPromptMessage *self, const gchar *text);
 JsonArray *mcp_prompt_message_get_content (McpPromptMessage *self);
 McpPromptMessage *mcp_prompt_message_ref (McpPromptMessage *self);
 void mcp_prompt_message_unref (McpPromptMessage *self);
-```
+#+end_src
 
----
+--------------
 
-## McpStdioTransport
-
+** McpStdioTransport
 Stdio-based transport.
 
-### Constructors
-
-```c
+*** Constructors
+#+begin_src C
 /* Use stdin/stdout */
 McpStdioTransport *mcp_stdio_transport_new (void);
 
 /* Spawn subprocess */
 McpStdioTransport *mcp_stdio_transport_new_subprocess_simple (const gchar *command_line,
                                                                GError **error);
-```
+#+end_src
 
----
+--------------
 
-## McpMuxTransport
+** McpMuxTransport
+I/O-free multiplexed transport. Outbound frames go through a host callback; inbound frames are pushed in by the host. Used to tunnel MCP inside another protocol (e.g. a chat-bridge WebSocket). See the [[file:transport-guide.org#multiplexed-mux-transport][Transport Guide]] for the full embedding pattern.
 
-I/O-free multiplexed transport.  Outbound frames go through a host
-callback; inbound frames are pushed in by the host.  Used to tunnel
-MCP inside another protocol (e.g. a chat-bridge WebSocket).
-See the [Transport Guide](transport-guide.md#multiplexed-mux-transport)
-for the full embedding pattern.
-
-### Constructors
-
-```c
+*** Constructors
+#+begin_src C
 McpMuxTransport *mcp_mux_transport_new (GMainContext *context);
-```
+#+end_src
 
-### Send-side wiring
-
-```c
+*** Send-side wiring
+#+begin_src C
 typedef void (*McpMuxSendFunc) (McpMuxTransport *self,
                                 JsonNode        *frame,
                                 gpointer         user_data);
@@ -520,27 +465,23 @@ void mcp_mux_transport_set_send_callback (McpMuxTransport *self,
                                           McpMuxSendFunc   callback,
                                           gpointer         user_data,
                                           GDestroyNotify   destroy);
-```
+#+end_src
 
-The previous callback's destroy notify runs on replacement and on
-transport finalize.
+The previous callback's destroy notify runs on replacement and on transport finalize.
 
-### Receive-side wiring
-
-```c
+*** Receive-side wiring
+#+begin_src C
 /* Push an inbound frame into the transport.  Safe from any thread —
  * the resulting `message-received` signal fires on the transport's
  * GMainContext. */
 void mcp_mux_transport_dispatch_frame (McpMuxTransport *self,
                                         JsonNode        *frame);
-```
+#+end_src
 
-Frames pushed while the transport is `DISCONNECTED` are silently
-dropped.
+Frames pushed while the transport is =DISCONNECTED= are silently dropped.
 
-### State + error
-
-```c
+*** State + error
+#+begin_src C
 void mcp_mux_transport_set_connected        (McpMuxTransport *self,
                                               gboolean         connected);
 
@@ -548,66 +489,58 @@ void mcp_mux_transport_emit_error_from_host (McpMuxTransport *self,
                                               GError          *error);
 
 GMainContext *mcp_mux_transport_get_context (McpMuxTransport *self);
-```
+#+end_src
 
----
+--------------
 
-## McpSession
-
+** McpSession
 Base session class (inherited by McpServer and McpClient).
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 McpImplementation *mcp_session_get_remote_implementation (McpSession *self);
-```
+#+end_src
 
----
+--------------
 
-## McpImplementation (Boxed)
-
+** McpImplementation (Boxed)
 Server/client implementation info.
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_implementation_get_name (McpImplementation *self);
 const gchar *mcp_implementation_get_version (McpImplementation *self);
-```
+#+end_src
 
----
+--------------
 
-## Error Domain
-
-```c
+** Error Domain
+#+begin_src C
 #define MCP_ERROR (mcp_error_quark ())
 GQuark mcp_error_quark (void);
-```
+#+end_src
 
-Use with `g_error_matches()`:
+Use with =g_error_matches()=:
 
-```c
+#+begin_src C
 if (g_error_matches (error, MCP_ERROR, MCP_ERROR_TIMEOUT))
 {
     /* Handle timeout */
 }
-```
+#+end_src
 
----
+--------------
 
-## McpSamplingMessage (Boxed)
-
+** McpSamplingMessage (Boxed)
 Message for LLM sampling requests.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpSamplingMessage *mcp_sampling_message_new (McpRole role);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 McpRole mcp_sampling_message_get_role (McpSamplingMessage *self);
 void mcp_sampling_message_add_text (McpSamplingMessage *self, const gchar *text);
 void mcp_sampling_message_add_image (McpSamplingMessage *self, const gchar *data,
@@ -617,23 +550,20 @@ JsonNode *mcp_sampling_message_to_json (McpSamplingMessage *self);
 McpSamplingMessage *mcp_sampling_message_new_from_json (JsonNode *node, GError **error);
 McpSamplingMessage *mcp_sampling_message_ref (McpSamplingMessage *self);
 void mcp_sampling_message_unref (McpSamplingMessage *self);
-```
+#+end_src
 
----
+--------------
 
-## McpSamplingResult (Boxed)
-
+** McpSamplingResult (Boxed)
 Result from LLM sampling.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpSamplingResult *mcp_sampling_result_new (McpRole role, const gchar *text);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 McpRole mcp_sampling_result_get_role (McpSamplingResult *self);
 const gchar *mcp_sampling_result_get_model (McpSamplingResult *self);
 void mcp_sampling_result_set_model (McpSamplingResult *self, const gchar *model);
@@ -643,23 +573,20 @@ JsonNode *mcp_sampling_result_to_json (McpSamplingResult *self);
 McpSamplingResult *mcp_sampling_result_new_from_json (JsonNode *node, GError **error);
 McpSamplingResult *mcp_sampling_result_ref (McpSamplingResult *self);
 void mcp_sampling_result_unref (McpSamplingResult *self);
-```
+#+end_src
 
----
+--------------
 
-## McpModelPreferences (Boxed)
-
+** McpModelPreferences (Boxed)
 Model preferences for sampling requests.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpModelPreferences *mcp_model_preferences_new (void);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 void mcp_model_preferences_add_hint (McpModelPreferences *self, const gchar *hint);
 GList *mcp_model_preferences_get_hints (McpModelPreferences *self);
 void mcp_model_preferences_set_cost_priority (McpModelPreferences *self, gdouble priority);
@@ -672,46 +599,40 @@ JsonNode *mcp_model_preferences_to_json (McpModelPreferences *self);
 McpModelPreferences *mcp_model_preferences_new_from_json (JsonNode *node, GError **error);
 McpModelPreferences *mcp_model_preferences_ref (McpModelPreferences *self);
 void mcp_model_preferences_unref (McpModelPreferences *self);
-```
+#+end_src
 
----
+--------------
 
-## McpRoot (Boxed)
-
+** McpRoot (Boxed)
 Filesystem root exposed by client.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpRoot *mcp_root_new (const gchar *uri, const gchar *name);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 const gchar *mcp_root_get_uri (McpRoot *self);
 const gchar *mcp_root_get_name (McpRoot *self);
 JsonNode *mcp_root_to_json (McpRoot *self);
 McpRoot *mcp_root_new_from_json (JsonNode *node, GError **error);
 McpRoot *mcp_root_ref (McpRoot *self);
 void mcp_root_unref (McpRoot *self);
-```
+#+end_src
 
----
+--------------
 
-## McpCompletionResult (Boxed)
-
+** McpCompletionResult (Boxed)
 Result from autocomplete request.
 
-### Constructor
-
-```c
+*** Constructor
+#+begin_src C
 McpCompletionResult *mcp_completion_result_new (void);
-```
+#+end_src
 
-### Methods
-
-```c
+*** Methods
+#+begin_src C
 void mcp_completion_result_add_value (McpCompletionResult *self, const gchar *value);
 GList *mcp_completion_result_get_values (McpCompletionResult *self);
 void mcp_completion_result_set_total (McpCompletionResult *self, gint64 total);
@@ -722,15 +643,14 @@ JsonNode *mcp_completion_result_to_json (McpCompletionResult *self);
 McpCompletionResult *mcp_completion_result_new_from_json (JsonNode *node, GError **error);
 McpCompletionResult *mcp_completion_result_ref (McpCompletionResult *self);
 void mcp_completion_result_unref (McpCompletionResult *self);
-```
+#+end_src
 
----
+--------------
 
-## Server Sampling API
-
+** Server Sampling API
 Request LLM sampling from connected client.
 
-```c
+#+begin_src C
 void mcp_server_request_sampling_async (McpServer *self, GList *messages,
                                         McpModelPreferences *model_preferences,
                                         const gchar *system_prompt, gint64 max_tokens,
@@ -739,33 +659,30 @@ void mcp_server_request_sampling_async (McpServer *self, GList *messages,
 McpSamplingResult *mcp_server_request_sampling_finish (McpServer *self,
                                                         GAsyncResult *result,
                                                         GError **error);
-```
+#+end_src
 
----
+--------------
 
-## Server Roots API
-
+** Server Roots API
 Request root list from connected client.
 
-```c
+#+begin_src C
 void mcp_server_list_roots_async (McpServer *self, GCancellable *cancellable,
                                   GAsyncReadyCallback callback, gpointer user_data);
 GList *mcp_server_list_roots_finish (McpServer *self, GAsyncResult *result, GError **error);
-```
+#+end_src
 
-### Server Signals (Additional)
+*** Server Signals (Additional)
+| Signal          | Description                 |
+|-----------------+-----------------------------|
+| =roots-changed= | Client's roots list changed |
 
-| Signal | Description |
-|--------|-------------|
-| `roots-changed` | Client's roots list changed |
+--------------
 
----
-
-## Server Completion API
-
+** Server Completion API
 Handle autocomplete requests.
 
-```c
+#+begin_src C
 typedef McpCompletionResult *(*McpCompletionHandler) (McpServer *server,
                                                       const gchar *ref_type,
                                                       const gchar *ref_name,
@@ -775,52 +692,48 @@ typedef McpCompletionResult *(*McpCompletionHandler) (McpServer *server,
 
 void mcp_server_set_completion_handler (McpServer *self, McpCompletionHandler handler,
                                         gpointer user_data, GDestroyNotify destroy);
-```
+#+end_src
 
----
+--------------
 
-## Client Sampling API
-
+** Client Sampling API
 Handle server sampling requests.
 
-```c
+#+begin_src C
 void mcp_client_respond_sampling (McpClient *self, const gchar *request_id,
                                    McpSamplingResult *result);
 void mcp_client_reject_sampling (McpClient *self, const gchar *request_id,
                                   gint error_code, const gchar *message);
-```
+#+end_src
 
-### Client Signals (Additional)
+*** Client Signals (Additional)
+| Signal                 | Description                  |
+|------------------------+------------------------------|
+| =sampling-requested=   | Server requests LLM sampling |
+| =roots-list-requested= | Server requests roots list   |
 
-| Signal | Description |
-|--------|-------------|
-| `sampling-requested` | Server requests LLM sampling |
-| `roots-list-requested` | Server requests roots list |
+--------------
 
----
-
-## Client Roots API
-
+** Client Roots API
 Manage filesystem roots exposed to server.
 
-```c
+#+begin_src C
 void mcp_client_add_root (McpClient *self, McpRoot *root);
 void mcp_client_remove_root (McpClient *self, const gchar *uri);
 GList *mcp_client_list_roots (McpClient *self);
 void mcp_client_notify_roots_changed (McpClient *self);
-```
+#+end_src
 
----
+--------------
 
-## Client Completion API
-
+** Client Completion API
 Request autocomplete from server.
 
-```c
+#+begin_src C
 void mcp_client_complete_async (McpClient *self, const gchar *ref_type,
                                 const gchar *ref_name, const gchar *argument_name,
                                 const gchar *argument_value, GCancellable *cancellable,
                                 GAsyncReadyCallback callback, gpointer user_data);
 McpCompletionResult *mcp_client_complete_finish (McpClient *self, GAsyncResult *result,
                                                   GError **error);
-```
+#+end_src

@@ -1,35 +1,31 @@
-# Transport Guide
-
+* Transport Guide
 This guide covers the transport layer in mcp-glib, including the abstract interface and concrete implementations.
 
-## Overview
-
+** Overview
 Transports handle the low-level communication between MCP clients and servers. mcp-glib provides:
 
-- **McpTransport** - Abstract interface defining transport operations
-- **McpStdioTransport** - Communication via stdin/stdout (process-based)
-- **McpHttpTransport** - HTTP client transport (POST + SSE)
-- **McpHttpServerTransport** - HTTP server transport (accepts POST + SSE)
-- **McpWebSocketTransport** - WebSocket client transport
-- **McpWebSocketServerTransport** - WebSocket server transport
-- **McpMuxTransport** - I/O-free multiplexed transport; the *host* supplies framing
+- *McpTransport* - Abstract interface defining transport operations
+- *McpStdioTransport* - Communication via stdin/stdout (process-based)
+- *McpHttpTransport* - HTTP client transport (POST + SSE)
+- *McpHttpServerTransport* - HTTP server transport (accepts POST + SSE)
+- *McpWebSocketTransport* - WebSocket client transport
+- *McpWebSocketServerTransport* - WebSocket server transport
+- *McpMuxTransport* - I/O-free multiplexed transport; the /host/ supplies framing
 
-### Transport Comparison
+*** Transport Comparison
+| Transport                     | Direction | Protocol        | Use Case                           |
+|-------------------------------+-----------+-----------------+------------------------------------|
+| =McpStdioTransport=           | Both      | stdin/stdout    | Local subprocess                   |
+| =McpHttpTransport=            | Client    | HTTP POST + SSE | Connect to HTTP server             |
+| =McpHttpServerTransport=      | Server    | HTTP POST + SSE | Accept HTTP clients                |
+| =McpWebSocketTransport=       | Client    | WebSocket       | Connect to WS server               |
+| =McpWebSocketServerTransport= | Server    | WebSocket       | Accept WS clients                  |
+| =McpMuxTransport=             | Both      | /host-supplied/ | Tunnel MCP inside another protocol |
 
-| Transport | Direction | Protocol | Use Case |
-|-----------|-----------|----------|----------|
-| `McpStdioTransport` | Both | stdin/stdout | Local subprocess |
-| `McpHttpTransport` | Client | HTTP POST + SSE | Connect to HTTP server |
-| `McpHttpServerTransport` | Server | HTTP POST + SSE | Accept HTTP clients |
-| `McpWebSocketTransport` | Client | WebSocket | Connect to WS server |
-| `McpWebSocketServerTransport` | Server | WebSocket | Accept WS clients |
-| `McpMuxTransport` | Both | _host-supplied_ | Tunnel MCP inside another protocol |
+** McpTransport Interface
+All transports implement the =McpTransport= interface:
 
-## McpTransport Interface
-
-All transports implement the `McpTransport` interface:
-
-```c
+#+begin_src C
 /* Connect to the remote endpoint */
 void mcp_transport_connect_async (McpTransport *transport,
                                   GCancellable *cancellable,
@@ -60,11 +56,10 @@ gboolean mcp_transport_send_message_finish (McpTransport *transport,
 
 /* Get current state */
 McpTransportState mcp_transport_get_state (McpTransport *transport);
-```
+#+end_src
 
-### Transport States
-
-```c
+*** Transport States
+#+begin_src C
 typedef enum {
     MCP_TRANSPORT_STATE_DISCONNECTED,   /* Not connected */
     MCP_TRANSPORT_STATE_CONNECTING,     /* Connection in progress */
@@ -72,36 +67,32 @@ typedef enum {
     MCP_TRANSPORT_STATE_DISCONNECTING,  /* Disconnection in progress */
     MCP_TRANSPORT_STATE_ERROR           /* Error occurred */
 } McpTransportState;
-```
+#+end_src
 
-### Signals
+*** Signals
+| Signal             | Description                                     |
+|--------------------+-------------------------------------------------|
+| =message-received= | A message was received from the remote endpoint |
+| =state-changed=    | Transport state changed                         |
+| =error=            | An error occurred                               |
 
-| Signal | Description |
-|--------|-------------|
-| `message-received` | A message was received from the remote endpoint |
-| `state-changed` | Transport state changed |
-| `error` | An error occurred |
+--------------
 
----
-
-## Stdio Transport
-
+** Stdio Transport
 The stdio transport communicates via stdin/stdout, typically used with subprocess servers.
 
-### Server-Side Usage
-
+*** Server-Side Usage
 For servers, create a transport that uses the process's stdin/stdout:
 
-```c
+#+begin_src C
 g_autoptr(McpStdioTransport) transport = mcp_stdio_transport_new ();
 mcp_server_set_transport (server, MCP_TRANSPORT (transport));
-```
+#+end_src
 
-### Client-Side Usage
-
+*** Client-Side Usage
 For clients, spawn a server as a subprocess:
 
-```c
+#+begin_src C
 g_autoptr(GError) error = NULL;
 g_autoptr(McpStdioTransport) transport = NULL;
 
@@ -114,43 +105,39 @@ if (transport == NULL)
 }
 
 mcp_client_set_transport (client, MCP_TRANSPORT (transport));
-```
+#+end_src
 
-### With Custom Streams
-
+*** With Custom Streams
 For advanced use cases, provide custom streams:
 
-```c
+#+begin_src C
 GInputStream *input = ...;   /* Read from server */
 GOutputStream *output = ...; /* Write to server */
 
 transport = mcp_stdio_transport_new_with_streams (input, output);
-```
+#+end_src
 
-### Message Framing
-
+*** Message Framing
 Stdio transport uses newline-delimited JSON (NDJSON):
+
 - Each message is a complete JSON object on a single line
-- Messages are separated by `\n`
+- Messages are separated by =\n=
 - No length prefix required
 
----
+--------------
 
-## HTTP Transport
-
+** HTTP Transport
 The HTTP transport uses HTTP POST for client-to-server messages and Server-Sent Events (SSE) for server-to-client messages.
 
-### Creating HTTP Transport
-
-```c
+*** Creating HTTP Transport
+#+begin_src C
 g_autoptr(McpHttpTransport) transport = NULL;
 
 transport = mcp_http_transport_new ("https://mcp.example.com/api");
-```
+#+end_src
 
-### Configuration
-
-```c
+*** Configuration
+#+begin_src C
 /* Set authentication token */
 mcp_http_transport_set_auth_token (transport, "Bearer my-token");
 
@@ -164,50 +151,45 @@ mcp_http_transport_set_timeout (transport, 30);  /* seconds */
 /* Configure reconnection */
 mcp_http_transport_set_reconnect_delay (transport, 1000);  /* ms */
 mcp_http_transport_set_max_reconnect_delay (transport, 30000);  /* ms */
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property              | Type   | Description                                  |
+|-----------------------+--------+----------------------------------------------|
+| =base-url=            | gchar* | Base URL for the MCP endpoint                |
+| =auth-token=          | gchar* | Authorization token                          |
+| =message-endpoint=    | gchar* | Path for POST messages (default: =/message=) |
+| =sse-endpoint=        | gchar* | Path for SSE events (default: =/sse=)        |
+| =timeout=             | guint  | Request timeout in seconds                   |
+| =reconnect-delay=     | guint  | Initial reconnect delay in ms                |
+| =max-reconnect-delay= | guint  | Maximum reconnect delay in ms                |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `base-url` | gchar* | Base URL for the MCP endpoint |
-| `auth-token` | gchar* | Authorization token |
-| `message-endpoint` | gchar* | Path for POST messages (default: `/message`) |
-| `sse-endpoint` | gchar* | Path for SSE events (default: `/sse`) |
-| `timeout` | guint | Request timeout in seconds |
-| `reconnect-delay` | guint | Initial reconnect delay in ms |
-| `max-reconnect-delay` | guint | Maximum reconnect delay in ms |
+*** How It Works
+1. *Client→Server*: Messages sent via HTTP POST to ={base-url}{message-endpoint}=
+2. *Server→Client*: Messages received via SSE connection to ={base-url}{sse-endpoint}=
+3. *Session Management*: Session ID returned in initialize response is used for subsequent requests
 
-### How It Works
-
-1. **Client→Server**: Messages sent via HTTP POST to `{base-url}{message-endpoint}`
-2. **Server→Client**: Messages received via SSE connection to `{base-url}{sse-endpoint}`
-3. **Session Management**: Session ID returned in initialize response is used for subsequent requests
-
-### Server-Side Considerations
-
+*** Server-Side Considerations
 When implementing an HTTP-based MCP server (not using mcp-glib's server):
+
 - POST endpoint receives JSON-RPC messages
 - SSE endpoint streams responses and notifications
 - Include session ID in responses for client tracking
 
----
+--------------
 
-## WebSocket Transport
-
+** WebSocket Transport
 The WebSocket transport provides full-duplex communication over a single connection.
 
-### Creating WebSocket Transport
-
-```c
+*** Creating WebSocket Transport
+#+begin_src C
 g_autoptr(McpWebSocketTransport) transport = NULL;
 
 transport = mcp_websocket_transport_new ("wss://mcp.example.com/ws");
-```
+#+end_src
 
-### Configuration
-
-```c
+*** Configuration
+#+begin_src C
 /* Set authentication token (sent as Sec-WebSocket-Protocol or header) */
 mcp_websocket_transport_set_auth_token (transport, "my-token");
 
@@ -224,41 +206,37 @@ mcp_websocket_transport_set_keepalive_interval (transport, 30);  /* seconds */
 /* Configure reconnection */
 mcp_websocket_transport_set_reconnect (transport, TRUE);
 mcp_websocket_transport_set_max_reconnect_attempts (transport, 5);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property                 | Type     | Description                             |
+|--------------------------+----------+-----------------------------------------|
+| =uri=                    | gchar*   | WebSocket URI (ws:// or wss://)         |
+| =auth-token=             | gchar*   | Authentication token                    |
+| =origin=                 | gchar*   | Origin header value                     |
+| =protocols=              | GStrv    | Subprotocol list                        |
+| =keepalive-interval=     | guint    | Ping interval in seconds (0 = disabled) |
+| =reconnect=              | gboolean | Auto-reconnect on disconnect            |
+| =max-reconnect-attempts= | gint     | Max reconnect attempts (-1 = unlimited) |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `uri` | gchar* | WebSocket URI (ws:// or wss://) |
-| `auth-token` | gchar* | Authentication token |
-| `origin` | gchar* | Origin header value |
-| `protocols` | GStrv | Subprotocol list |
-| `keepalive-interval` | guint | Ping interval in seconds (0 = disabled) |
-| `reconnect` | gboolean | Auto-reconnect on disconnect |
-| `max-reconnect-attempts` | gint | Max reconnect attempts (-1 = unlimited) |
-
-### Custom SoupSession
-
+*** Custom SoupSession
 For advanced HTTP/proxy configuration:
 
-```c
+#+begin_src C
 g_autoptr(SoupSession) session = soup_session_new ();
 /* Configure session... */
 
 transport = mcp_websocket_transport_new_with_session (
     "wss://mcp.example.com/ws", session);
-```
+#+end_src
 
----
+--------------
 
-## HTTP Server Transport
-
+** HTTP Server Transport
 The HTTP server transport allows an MCP server to accept connections from clients over HTTP using POST + Server-Sent Events.
 
-### Creating HTTP Server Transport
-
-```c
+*** Creating HTTP Server Transport
+#+begin_src C
 g_autoptr(McpHttpServerTransport) transport = NULL;
 
 /* Listen on port 8080 */
@@ -266,11 +244,10 @@ transport = mcp_http_server_transport_new (8080);
 
 /* Or with specific host binding */
 transport = mcp_http_server_transport_new_full ("127.0.0.1", 8080);
-```
+#+end_src
 
-### Configuration
-
-```c
+*** Configuration
+#+begin_src C
 /* Set custom endpoint paths */
 mcp_http_server_transport_set_post_path (transport, "/mcp");
 mcp_http_server_transport_set_sse_path (transport, "/events");
@@ -283,51 +260,45 @@ mcp_http_server_transport_set_auth_token (transport, "secret-token");
 g_autoptr(GTlsCertificate) cert = g_tls_certificate_new_from_files (
     "cert.pem", "key.pem", &error);
 mcp_http_server_transport_set_tls_certificate (transport, cert);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property          | Type             | Default | Description                                  |
+|-------------------+------------------+---------+----------------------------------------------|
+| =port=            | guint            | 0       | Port to listen on (0 = auto-assign)          |
+| =host=            | gchar*           | NULL    | Host/address to bind (NULL = all interfaces) |
+| =post-path=       | gchar*           | "/"     | Path for POST requests                       |
+| =sse-path=        | gchar*           | "/sse"  | Path for SSE connections                     |
+| =session-id=      | gchar*           | (auto)  | Current session ID (read-only)               |
+| =require-auth=    | gboolean         | FALSE   | Require Bearer token                         |
+| =auth-token=      | gchar*           | NULL    | Expected Bearer token                        |
+| =tls-certificate= | GTlsCertificate* | NULL    | TLS certificate for HTTPS                    |
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `port` | guint | 0 | Port to listen on (0 = auto-assign) |
-| `host` | gchar* | NULL | Host/address to bind (NULL = all interfaces) |
-| `post-path` | gchar* | "/" | Path for POST requests |
-| `sse-path` | gchar* | "/sse" | Path for SSE connections |
-| `session-id` | gchar* | (auto) | Current session ID (read-only) |
-| `require-auth` | gboolean | FALSE | Require Bearer token |
-| `auth-token` | gchar* | NULL | Expected Bearer token |
-| `tls-certificate` | GTlsCertificate* | NULL | TLS certificate for HTTPS |
-
-### Usage with McpServer
-
-```c
+*** Usage with McpServer
+#+begin_src C
 g_autoptr(McpServer) server = mcp_server_new ("my-server", "1.0.0");
 g_autoptr(McpHttpServerTransport) transport = mcp_http_server_transport_new (8080);
 
 mcp_server_set_transport (server, MCP_TRANSPORT (transport));
 mcp_server_start_async (server, NULL, on_started, NULL);
-```
+#+end_src
 
-### Protocol Details
-
-1. Client connects to SSE endpoint (GET `/sse`)
-2. Server generates session ID, sends it in `Mcp-Session-Id` header
-3. Client sends JSON-RPC messages via POST to `/` with `Mcp-Session-Id` header
+*** Protocol Details
+1. Client connects to SSE endpoint (GET =/sse=)
+2. Server generates session ID, sends it in =Mcp-Session-Id= header
+3. Client sends JSON-RPC messages via POST to =/= with =Mcp-Session-Id= header
 4. Server sends responses/notifications via SSE stream
 
-### Example
+*** Example
+See =examples/http-server.c= for a complete example.
 
-See `examples/http-server.c` for a complete example.
+--------------
 
----
-
-## WebSocket Server Transport
-
+** WebSocket Server Transport
 The WebSocket server transport allows an MCP server to accept WebSocket connections for bidirectional communication.
 
-### Creating WebSocket Server Transport
-
-```c
+*** Creating WebSocket Server Transport
+#+begin_src C
 g_autoptr(McpWebSocketServerTransport) transport = NULL;
 
 /* Listen on port 8081 */
@@ -335,11 +306,10 @@ transport = mcp_websocket_server_transport_new (8081);
 
 /* Or with host and custom path */
 transport = mcp_websocket_server_transport_new_full ("0.0.0.0", 8081, "/mcp");
-```
+#+end_src
 
-### Configuration
-
-```c
+*** Configuration
+#+begin_src C
 /* Set WebSocket path */
 mcp_websocket_server_transport_set_path (transport, "/ws");
 
@@ -361,45 +331,42 @@ mcp_websocket_server_transport_set_keepalive_interval (transport, 30);  /* secon
 g_autoptr(GTlsCertificate) cert = g_tls_certificate_new_from_files (
     "cert.pem", "key.pem", &error);
 mcp_websocket_server_transport_set_tls_certificate (transport, cert);
-```
+#+end_src
 
-### Properties
+*** Properties
+| Property             | Type             | Default | Description                                  |
+|----------------------+------------------+---------+----------------------------------------------|
+| =port=               | guint            | 0       | Port to listen on (0 = auto-assign)          |
+| =host=               | gchar*           | NULL    | Host/address to bind (NULL = all interfaces) |
+| =path=               | gchar*           | "/"     | WebSocket endpoint path                      |
+| =protocols=          | GStrv            | NULL    | Accepted subprotocols                        |
+| =origin=             | gchar*           | NULL    | Required origin (NULL = any)                 |
+| =require-auth=       | gboolean         | FALSE   | Require Bearer token                         |
+| =auth-token=         | gchar*           | NULL    | Expected Bearer token                        |
+| =keepalive-interval= | guint            | 30      | Ping interval in seconds (0 = disabled)      |
+| =tls-certificate=    | GTlsCertificate* | NULL    | TLS certificate for WSS                      |
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `port` | guint | 0 | Port to listen on (0 = auto-assign) |
-| `host` | gchar* | NULL | Host/address to bind (NULL = all interfaces) |
-| `path` | gchar* | "/" | WebSocket endpoint path |
-| `protocols` | GStrv | NULL | Accepted subprotocols |
-| `origin` | gchar* | NULL | Required origin (NULL = any) |
-| `require-auth` | gboolean | FALSE | Require Bearer token |
-| `auth-token` | gchar* | NULL | Expected Bearer token |
-| `keepalive-interval` | guint | 30 | Ping interval in seconds (0 = disabled) |
-| `tls-certificate` | GTlsCertificate* | NULL | TLS certificate for WSS |
-
-### Usage with McpServer
-
-```c
+*** Usage with McpServer
+#+begin_src C
 g_autoptr(McpServer) server = mcp_server_new ("my-server", "1.0.0");
 g_autoptr(McpWebSocketServerTransport) transport =
     mcp_websocket_server_transport_new (8081);
 
 mcp_server_set_transport (server, MCP_TRANSPORT (transport));
 mcp_server_start_async (server, NULL, on_started, NULL);
-```
+#+end_src
 
-### Single-Client Model
-
+*** Single-Client Model
 Both HTTP and WebSocket server transports follow a single-client model:
+
 - Each transport instance handles one client connection at a time
 - Additional connection attempts are rejected until the current client disconnects
-- For multi-client scenarios, use multiple `McpServer` instances
+- For multi-client scenarios, use multiple =McpServer= instances
 
-### Getting Actual Port
-
+*** Getting Actual Port
 When using port 0 (auto-assign), get the actual port after connecting:
 
-```c
+#+begin_src C
 static void
 on_server_started (GObject *source, GAsyncResult *result, gpointer user_data)
 {
@@ -407,44 +374,25 @@ on_server_started (GObject *source, GAsyncResult *result, gpointer user_data)
     guint actual_port = mcp_websocket_server_transport_get_actual_port (transport);
     g_print ("Server listening on port %u\n", actual_port);
 }
-```
+#+end_src
 
-### Example
+*** Example
+See =examples/websocket-server.c= for a complete example.
 
-See `examples/websocket-server.c` for a complete example.
+--------------
 
----
+** Multiplexed (Mux) Transport
+=McpMuxTransport= is a transport implementation that owns *no I/O of its own*. Outbound JSON frames are pushed to a user-supplied callback; inbound JSON frames are fed in via =mcp_mux_transport_dispatch_frame()=. The host is responsible for the actual carrier.
 
-## Multiplexed (Mux) Transport
+This makes it possible to /tunnel/ an MCP session through any wire that can carry framed JSON --- a WebSocket that's already carrying other application traffic, a SOCKS-style multiplexed pipe, a chat protocol's "agent" channel, even a single GBytes-at-a-time function call sequence in a test.
 
-`McpMuxTransport` is a transport implementation that owns **no I/O of
-its own**.  Outbound JSON frames are pushed to a user-supplied
-callback; inbound JSON frames are fed in via
-`mcp_mux_transport_dispatch_frame()`.  The host is responsible for
-the actual carrier.
+*** When to use it
+- The carrier is *owned by another subsystem* (e.g. a chat-bridge WebSocket) and you want MCP frames to ride alongside other application frames.
+- You want to *test* an =McpClient=/=McpServer= pair without spawning a subprocess or opening a real socket --- two =McpMuxTransport= instances wired back-to-back run the full handshake in a single process, on a single thread.
+- You're *embedding MCP* in a protocol that itself negotiates an envelope (libreclaw's bridge subsystem does exactly this --- see =deps/libreclaw/docs/bridge.org=).
 
-This makes it possible to *tunnel* an MCP session through any wire
-that can carry framed JSON — a WebSocket that's already carrying
-other application traffic, a SOCKS-style multiplexed pipe, a chat
-protocol's "agent" channel, even a single GBytes-at-a-time function
-call sequence in a test.
-
-### When to use it
-
-- The carrier is **owned by another subsystem** (e.g. a chat-bridge
-  WebSocket) and you want MCP frames to ride alongside other
-  application frames.
-- You want to **test** an `McpClient`/`McpServer` pair without
-  spawning a subprocess or opening a real socket — two `McpMuxTransport`
-  instances wired back-to-back run the full handshake in a single
-  process, on a single thread.
-- You're **embedding MCP** in a protocol that itself negotiates an
-  envelope (libreclaw's bridge subsystem does exactly this — see
-  `deps/libreclaw/docs/bridge.md`).
-
-### Public API
-
-```c
+*** Public API
+#+begin_src C
 McpMuxTransport *mcp_mux_transport_new           (GMainContext   *context);
 
 typedef void (*McpMuxSendFunc) (McpMuxTransport *self,
@@ -466,38 +414,20 @@ void mcp_mux_transport_emit_error_from_host      (McpMuxTransport *self,
                                                   GError          *error);
 
 GMainContext *mcp_mux_transport_get_context      (McpMuxTransport *self);
-```
+#+end_src
 
-### Lifecycle
+*** Lifecycle
+1. *Construct* with the =GMainContext= you want inbound frames dispatched on (or =NULL= for the thread-default at construction time).
+2. *Set the send callback* --- required before any =send_message_async= call. Replacing the callback runs the previous data's destroy notify; finalize also runs it.
+3. *Flip to connected* with =mcp_mux_transport_set_connected(self, TRUE)= once the underlying carrier is ready to accept frames. Until then, =send_message_async= fails with =MCP_ERROR_TRANSPORT_ERROR= and =dispatch_frame= silently drops.
+4. *Hand to an =McpClient= or =McpServer=* via =mcp_*_set_transport()=. Standard MCP machinery does the rest.
+5. *Tear down* by flipping connected to =FALSE= or unrefing the transport.
 
-1. **Construct** with the `GMainContext` you want inbound frames
-   dispatched on (or `NULL` for the thread-default at construction
-   time).
-2. **Set the send callback** — required before any `send_message_async`
-   call.  Replacing the callback runs the previous data's destroy
-   notify; finalize also runs it.
-3. **Flip to connected** with `mcp_mux_transport_set_connected(self,
-   TRUE)` once the underlying carrier is ready to accept frames.
-   Until then, `send_message_async` fails with `MCP_ERROR_TRANSPORT_ERROR`
-   and `dispatch_frame` silently drops.
-4. **Hand to an `McpClient` or `McpServer`** via
-   `mcp_*_set_transport()`.  Standard MCP machinery does the rest.
-5. **Tear down** by flipping connected to `FALSE` or unrefing the
-   transport.
+*** Threading
+=mcp_mux_transport_dispatch_frame()= is *thread-safe*. Frames pushed in from any thread are trampolined onto the transport's =GMainContext= via =g_main_context_invoke_full=, so the =message-received= signal always fires on the context the host expects. This lets a libsoup WebSocket callback (which runs on the main thread) and a worker thread share the same transport without the host writing its own marshalling.
 
-### Threading
-
-`mcp_mux_transport_dispatch_frame()` is **thread-safe**.  Frames
-pushed in from any thread are trampolined onto the transport's
-`GMainContext` via `g_main_context_invoke_full`, so the
-`message-received` signal always fires on the context the host
-expects.  This lets a libsoup WebSocket callback (which runs on the
-main thread) and a worker thread share the same transport without
-the host writing its own marshalling.
-
-### Wiring two muxes back-to-back
-
-```c
+*** Wiring two muxes back-to-back
+#+begin_src C
 static void
 forward (McpMuxTransport *self, JsonNode *frame, gpointer user_data)
 {
@@ -516,17 +446,12 @@ mcp_mux_transport_set_connected     (b, TRUE);
 /* Now hand `a` to an McpClient and `b` to an McpServer — they will
  * complete the initialize handshake and exchange tool calls without
  * any I/O at all. */
-```
+#+end_src
 
-### Embedding inside a larger protocol
+*** Embedding inside a larger protocol
+The typical embedding pattern: the host carrier reads a frame off the wire, decides it's an MCP frame (e.g. by a wrapping envelope tag), strips the envelope, and calls =dispatch_frame()=. Conversely, in the send callback the host wraps the frame in its envelope and writes to the wire.
 
-The typical embedding pattern: the host carrier reads a frame off the
-wire, decides it's an MCP frame (e.g. by a wrapping envelope tag),
-strips the envelope, and calls `dispatch_frame()`.  Conversely, in
-the send callback the host wraps the frame in its envelope and
-writes to the wire.
-
-```c
+#+begin_src C
 /* Host's WebSocket message handler. */
 static void
 on_ws_message (SoupWebsocketConnection *conn,
@@ -549,67 +474,61 @@ host_send (McpMuxTransport *self, JsonNode *frame, gpointer user_data)
     g_autofree gchar *str = json_to_string (envelope, FALSE);
     soup_websocket_connection_send_text (h->conn, str);
 }
-```
+#+end_src
 
-### Error reporting
+*** Error reporting
+If the host detects a carrier-level fault (peer reset, malformed frame, etc.) it should call:
 
-If the host detects a carrier-level fault (peer reset, malformed
-frame, etc.) it should call:
-
-```c
+#+begin_src C
 g_autoptr(GError) e = g_error_new_literal (MCP_ERROR,
                                            MCP_ERROR_TRANSPORT_ERROR,
                                            "carrier reset");
 mcp_mux_transport_emit_error_from_host (mux, e);
-```
+#+end_src
 
-This emits the standard `McpTransport::error` signal so any
-attached `McpClient`/`McpServer` can react.
+This emits the standard =McpTransport::error= signal so any attached =McpClient=/=McpServer= can react.
 
----
+--------------
 
-## Choosing a Transport
+** Choosing a Transport
+*** Client Transports
+| Transport   | Use Case                          | Pros                               | Cons                 |
+|-------------+-----------------------------------+------------------------------------+----------------------|
+| *Stdio*     | Local subprocess servers          | Simple, no network                 | Single process only  |
+| *HTTP*      | Stateless APIs, load balancing    | HTTP infrastructure                | Higher latency       |
+| *WebSocket* | Real-time, bidirectional          | Low latency, full-duplex           | Requires WS support  |
+| *Mux*       | Tunnel through host-owned carrier | Zero I/O surface; pure passthrough | Host must do framing |
 
-### Client Transports
+*** Server Transports
+| Transport          | Use Case                          | Pros                        | Cons                 |
+|--------------------+-----------------------------------+-----------------------------+----------------------|
+| *HTTP Server*      | REST-like APIs, browser clients   | Standard HTTP, SSE fallback | Unidirectional SSE   |
+| *WebSocket Server* | Real-time apps, low latency       | Full-duplex, efficient      | Requires WS support  |
+| *Mux*              | Tunnel through host-owned carrier | Same as client side         | Host must do framing |
 
-| Transport | Use Case | Pros | Cons |
-|-----------|----------|------|------|
-| **Stdio** | Local subprocess servers | Simple, no network | Single process only |
-| **HTTP** | Stateless APIs, load balancing | HTTP infrastructure | Higher latency |
-| **WebSocket** | Real-time, bidirectional | Low latency, full-duplex | Requires WS support |
-| **Mux** | Tunnel through host-owned carrier | Zero I/O surface; pure passthrough | Host must do framing |
+*** Recommendations
+*For Clients:*
 
-### Server Transports
+- *Local tools/servers*: Use =McpStdioTransport= with subprocess
+- *Cloud-hosted MCP*: Use =McpHttpTransport= or =McpWebSocketTransport=
+- *Real-time updates*: Prefer =McpWebSocketTransport=
+- *Behind proxies*: =McpHttpTransport= often works better
+- *Tunneled inside another protocol*: Use =McpMuxTransport=
 
-| Transport | Use Case | Pros | Cons |
-|-----------|----------|------|------|
-| **HTTP Server** | REST-like APIs, browser clients | Standard HTTP, SSE fallback | Unidirectional SSE |
-| **WebSocket Server** | Real-time apps, low latency | Full-duplex, efficient | Requires WS support |
-| **Mux** | Tunnel through host-owned carrier | Same as client side | Host must do framing |
+*For Servers:*
 
-### Recommendations
+- *Network-accessible server*: Use =McpHttpServerTransport= or =McpWebSocketServerTransport=
+- *Browser-based clients*: Use =McpHttpServerTransport= (SSE works everywhere)
+- *Real-time bidirectional*: Use =McpWebSocketServerTransport=
+- *Local subprocess*: Use =McpStdioTransport= (works for both client and server)
+- *Embedded inside a host that owns its own wire*: Use =McpMuxTransport=
 
-**For Clients:**
-- **Local tools/servers**: Use `McpStdioTransport` with subprocess
-- **Cloud-hosted MCP**: Use `McpHttpTransport` or `McpWebSocketTransport`
-- **Real-time updates**: Prefer `McpWebSocketTransport`
-- **Behind proxies**: `McpHttpTransport` often works better
-- **Tunneled inside another protocol**: Use `McpMuxTransport`
+--------------
 
-**For Servers:**
-- **Network-accessible server**: Use `McpHttpServerTransport` or `McpWebSocketServerTransport`
-- **Browser-based clients**: Use `McpHttpServerTransport` (SSE works everywhere)
-- **Real-time bidirectional**: Use `McpWebSocketServerTransport`
-- **Local subprocess**: Use `McpStdioTransport` (works for both client and server)
-- **Embedded inside a host that owns its own wire**: Use `McpMuxTransport`
+** Implementing Custom Transports
+To create a custom transport, implement the =McpTransport= interface:
 
----
-
-## Implementing Custom Transports
-
-To create a custom transport, implement the `McpTransport` interface:
-
-```c
+#+begin_src C
 /* In header */
 #define MY_TYPE_TRANSPORT (my_transport_get_type ())
 G_DECLARE_FINAL_TYPE (MyTransport, my_transport, MY, TRANSPORT, GObject)
@@ -630,25 +549,23 @@ my_transport_iface_init (McpTransportInterface *iface)
 G_DEFINE_TYPE_WITH_CODE (MyTransport, my_transport, G_TYPE_OBJECT,
                          G_IMPLEMENT_INTERFACE (MCP_TYPE_TRANSPORT,
                                                 my_transport_iface_init))
-```
+#+end_src
 
-### Required Methods
+*** Required Methods
+1. *connect_async/finish*: Establish connection, transition to CONNECTED state
+2. *disconnect_async/finish*: Close connection, transition to DISCONNECTED state
+3. *send_message_async/finish*: Send a JSON message to the remote endpoint
+4. *get_state*: Return current =McpTransportState=
 
-1. **connect_async/finish**: Establish connection, transition to CONNECTED state
-2. **disconnect_async/finish**: Close connection, transition to DISCONNECTED state
-3. **send_message_async/finish**: Send a JSON message to the remote endpoint
-4. **get_state**: Return current `McpTransportState`
-
-### Required Signals
-
+*** Required Signals
 Emit these signals appropriately:
-- `message-received` when a message arrives (with `JsonNode*` parameter)
-- `state-changed` when state changes (with old and new `McpTransportState`)
-- `error` when an error occurs (with `GError*` parameter)
 
-### Helper Functions
+- =message-received= when a message arrives (with =JsonNode*= parameter)
+- =state-changed= when state changes (with old and new =McpTransportState=)
+- =error= when an error occurs (with =GError*= parameter)
 
-```c
+*** Helper Functions
+#+begin_src C
 /* Emit message-received signal */
 void mcp_transport_emit_message_received (McpTransport *transport,
                                           JsonNode *message);
@@ -661,15 +578,14 @@ void mcp_transport_emit_state_changed (McpTransport *transport,
 /* Emit error signal */
 void mcp_transport_emit_error (McpTransport *transport,
                                GError *error);
-```
+#+end_src
 
----
+--------------
 
-## Error Handling
+** Error Handling
+Transport errors use the =MCP_ERROR= domain:
 
-Transport errors use the `MCP_ERROR` domain:
-
-```c
+#+begin_src C
 if (g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
 {
     g_print ("Connection was closed\n");
@@ -682,13 +598,12 @@ else if (g_error_matches (error, MCP_ERROR, MCP_ERROR_TIMEOUT))
 {
     g_print ("Operation timed out\n");
 }
-```
+#+end_src
 
-### Reconnection
-
+*** Reconnection
 HTTP and WebSocket transports support automatic reconnection:
 
-```c
+#+begin_src C
 /* Enable reconnection */
 mcp_websocket_transport_set_reconnect (transport, TRUE);
 
@@ -712,4 +627,4 @@ on_state_changed (McpTransport      *transport,
         g_print ("Connected!\n");
     }
 }
-```
+#+end_src

@@ -1,17 +1,15 @@
-# MCP Server Guide
-
+* MCP Server Guide
 This guide explains how to create MCP servers using mcp-glib.
 
-## Overview
-
+** Overview
 An MCP server exposes capabilities to AI clients:
-- **Tools** - Functions the AI can call
-- **Resources** - Data the AI can read
-- **Prompts** - Templates for AI interactions
 
-## Basic Server Structure
+- *Tools* - Functions the AI can call
+- *Resources* - Data the AI can read
+- *Prompts* - Templates for AI interactions
 
-```c
+** Basic Server Structure
+#+begin_src C
 #include <mcp/mcp.h>
 
 static GMainLoop *main_loop = NULL;
@@ -53,15 +51,13 @@ main (int argc, char *argv[])
 
     return 0;
 }
-```
+#+end_src
 
-## Adding Tools
-
+** Adding Tools
 Tools are functions that AI clients can call.
 
-### Defining a Tool
-
-```c
+*** Defining a Tool
+#+begin_src C
 /* Tool handler function */
 static McpToolResult *
 greet_handler (McpServer   *server,
@@ -133,13 +129,12 @@ greet_handler (McpServer   *server,
     /* Register with server */
     mcp_server_add_tool (server, tool, greet_handler, NULL, NULL);
 }
-```
+#+end_src
 
-### Tool Result Types
-
+*** Tool Result Types
 Tools can return different content types:
 
-```c
+#+begin_src C
 /* Text content */
 mcp_tool_result_add_text (result, "Hello, world!");
 
@@ -149,24 +144,21 @@ mcp_tool_result_add_image (result, base64_data, "image/png");
 /* Multiple content items */
 mcp_tool_result_add_text (result, "Here is the chart:");
 mcp_tool_result_add_image (result, chart_base64, "image/png");
-```
+#+end_src
 
-### Error Results
-
-```c
+*** Error Results
+#+begin_src C
 /* Create error result */
 result = mcp_tool_result_new (TRUE);  /* TRUE = is_error */
 mcp_tool_result_add_text (result, "Something went wrong: ...");
 return result;
-```
+#+end_src
 
-## Adding Resources
-
+** Adding Resources
 Resources are data that AI clients can read.
 
-### Static Resources
-
-```c
+*** Static Resources
+#+begin_src C
 /* Resource handler */
 static GList *
 readme_handler (McpServer   *server,
@@ -191,13 +183,12 @@ readme_handler (McpServer   *server,
 
     mcp_server_add_resource (server, resource, readme_handler, NULL, NULL);
 }
-```
+#+end_src
 
-### Resource Templates
-
+*** Resource Templates
 Resource templates allow dynamic URIs with parameters:
 
-```c
+#+begin_src C
 /* Template handler - handles any matching URI */
 static GList *
 file_handler (McpServer   *server,
@@ -238,11 +229,10 @@ file_handler (McpServer   *server,
 
     mcp_server_add_resource_template (server, template, file_handler, NULL, NULL);
 }
-```
+#+end_src
 
-### Binary Resources
-
-```c
+*** Binary Resources
+#+begin_src C
 static GList *
 image_handler (McpServer   *server,
                const gchar *uri,
@@ -264,13 +254,12 @@ image_handler (McpServer   *server,
 
     return g_list_append (NULL, contents);
 }
-```
+#+end_src
 
-## Adding Prompts
-
+** Adding Prompts
 Prompts are templates for AI interactions.
 
-```c
+#+begin_src C
 /* Prompt handler */
 static McpPromptResult *
 greeting_handler (McpServer   *server,
@@ -318,15 +307,13 @@ greeting_handler (McpServer   *server,
 
     mcp_server_add_prompt (server, prompt, greeting_handler, NULL, NULL);
 }
-```
+#+end_src
 
-## Server Signals
-
-### client-initialized
-
+** Server Signals
+*** client-initialized
 Emitted when a client connects and completes the handshake:
 
-```c
+#+begin_src C
 static void
 on_client_initialized (McpServer *server, gpointer user_data)
 {
@@ -335,13 +322,12 @@ on_client_initialized (McpServer *server, gpointer user_data)
 
 g_signal_connect (server, "client-initialized",
                   G_CALLBACK (on_client_initialized), NULL);
-```
+#+end_src
 
-### client-disconnected
-
+*** client-disconnected
 Emitted when the client disconnects:
 
-```c
+#+begin_src C
 static void
 on_client_disconnected (McpServer *server, gpointer user_data)
 {
@@ -351,13 +337,12 @@ on_client_disconnected (McpServer *server, gpointer user_data)
 
 g_signal_connect (server, "client-disconnected",
                   G_CALLBACK (on_client_disconnected), NULL);
-```
+#+end_src
 
-## Dynamic Updates
-
+** Dynamic Updates
 Notify clients when capabilities change:
 
-```c
+#+begin_src C
 /* Add a new tool dynamically */
 mcp_server_add_tool (server, new_tool, handler, NULL, NULL);
 
@@ -367,41 +352,41 @@ mcp_server_notify_tools_changed (server);
 /* Similarly for resources and prompts */
 mcp_server_notify_resources_changed (server);
 mcp_server_notify_prompts_changed (server);
-```
+#+end_src
 
-## Server Capabilities
-
+** Server Capabilities
 Configure server capabilities:
 
-```c
+#+begin_src C
 McpServerCapabilities *caps = mcp_server_get_capabilities (server);
 
 /* Enable experimental features */
 mcp_server_capabilities_set_experimental (caps, "tasks", TRUE);
-```
+#+end_src
 
-## Logging
-
+** Logging
 Send log messages to connected clients:
 
-```c
+#+begin_src C
 mcp_server_emit_log (server, MCP_LOG_LEVEL_INFO,
                      "Processing request...", "my-logger");
-```
+#+end_src
 
-## Complete Example
+** Complete Example
+See =examples/simple-server.c= for a complete working example with:
 
-See `examples/simple-server.c` for a complete working example with:
 - Echo tool
 - README resource
 - Greeting prompt
 
-See `examples/calculator-server.c` for a more complex example with:
+See =examples/calculator-server.c= for a more complex example with:
+
 - Multiple mathematical tools
 - Error handling
 - JSON schema validation
 
-See `examples/filesystem-server.c` for:
+See =examples/filesystem-server.c= for:
+
 - Resource templates
 - File serving
 - Path validation

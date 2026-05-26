@@ -1,22 +1,20 @@
-# mcp-glib
+* mcp-glib
+A GLib/GObject implementation of the [[https://modelcontextprotocol.io/][Model Context Protocol (MCP)]] for building MCP servers and clients in C.
 
-A GLib/GObject implementation of the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for building MCP servers and clients in C.
+** Features
+- *MCP Server Support* - Expose tools, resources, and prompts to AI applications
+- *MCP Client Support* - Connect to and interact with MCP servers
+- *Tasks API* - Experimental support for long-running tool operations
+- *Stdio Transport* - Process-based communication via stdin/stdout
+- *HTTP / WebSocket Transports* - Client and server variants over libsoup-3
+- *Mux Transport* - I/O-free multiplexed transport for tunneling MCP inside another protocol
+- *GObject Introspection* - First-class support for language bindings (Python, JavaScript, etc.)
+- *Async Operations* - Built on libdex for composable async futures
+- *Cross-Platform* - Windows DLL via mingw cross-compilation
 
-## Features
+** Status
+*Complete* - Full MCP 2025-03-26 protocol implementation with:
 
-- **MCP Server Support** - Expose tools, resources, and prompts to AI applications
-- **MCP Client Support** - Connect to and interact with MCP servers
-- **Tasks API** - Experimental support for long-running tool operations
-- **Stdio Transport** - Process-based communication via stdin/stdout
-- **HTTP / WebSocket Transports** - Client and server variants over libsoup-3
-- **Mux Transport** - I/O-free multiplexed transport for tunneling MCP inside another protocol
-- **GObject Introspection** - First-class support for language bindings (Python, JavaScript, etc.)
-- **Async Operations** - Built on libdex for composable async futures
-- **Cross-Platform** - Windows DLL via mingw cross-compilation
-
-## Status
-
-**Complete** - Full MCP 2025-03-26 protocol implementation with:
 - Tools, Resources, Resource Templates, and Prompts
 - Server and Client classes with async operations
 - Tasks API for long-running operations (experimental)
@@ -24,45 +22,39 @@ A GLib/GObject implementation of the [Model Context Protocol (MCP)](https://mode
 - GIR/typelib generation for language bindings
 - Comprehensive test suite (170+ tests)
 
-## Requirements
-
+** Requirements
 - GCC with gnu89 support
 - GLib 2.0 / GObject 2.0 / GIO 2.0 / GIO-Unix 2.0
 - json-glib 1.0
 - libsoup 3.0
 - libdex 1.0
 
-### Fedora 43
-
-```bash
+*** Fedora 43
+#+begin_src sh
 sudo dnf install gcc make pkgconfig glib2-devel json-glib-devel \
     libsoup3-devel libdex-devel gobject-introspection-devel
-```
+#+end_src
 
-## Building
-
-```bash
+** Building
+#+begin_src sh
 make              # Build library
 make test         # Run tests
 make examples     # Build examples
 make gir          # Generate GIR and typelib
 make install      # Install to /usr/local
-```
+#+end_src
 
-### Cross-Compilation
-
-```bash
+*** Cross-Compilation
+#+begin_src sh
 make WINDOWS=1      # Windows x64 DLL (via mingw)
 make LINUX_ARM64=1  # Linux ARM64
-```
+#+end_src
 
-See [docs/building.md](docs/building.md#cross-compilation) for details.
+See [[file:docs/building.org#cross-compilation][docs/building.org]] for details.
 
-## Quick Example
-
-### Simple MCP Server
-
-```c
+** Quick Example
+*** Simple MCP Server
+#+begin_src C
 #include <mcp/mcp.h>
 
 static GMainLoop *main_loop = NULL;
@@ -129,11 +121,10 @@ main (int argc, char *argv[])
 
     return 0;
 }
-```
+#+end_src
 
-### Simple MCP Client
-
-```c
+*** Simple MCP Client
+#+begin_src C
 #include <mcp/mcp.h>
 
 static GMainLoop *main_loop = NULL;
@@ -227,42 +218,40 @@ main (int argc, char *argv[])
 
     return 0;
 }
-```
+#+end_src
 
-## Examples
+** Examples
+The =examples/= directory contains working example programs:
 
-The `examples/` directory contains working example programs:
-
-- **simple-server.c** - Minimal server with echo tool, readme resource, and greeting prompt
-- **simple-client.c** - Client that connects to a server and exercises all features
-- **calculator-server.c** - Calculator with add, subtract, multiply, divide, sqrt, power tools
-- **filesystem-server.c** - Serves files from a directory using resource templates
+- *simple-server.c* - Minimal server with echo tool, readme resource, and greeting prompt
+- *simple-client.c* - Client that connects to a server and exercises all features
+- *calculator-server.c* - Calculator with add, subtract, multiply, divide, sqrt, power tools
+- *filesystem-server.c* - Serves files from a directory using resource templates
 
 Build and run examples:
 
-```bash
+#+begin_src sh
 make examples
 ./build/simple-client ./build/simple-server
 ./build/simple-client ./build/calculator-server
 ./build/simple-client ./build/filesystem-server /path/to/directory
-```
+#+end_src
 
-## CLI Tools
-
+** CLI Tools
 Command-line tools for interacting with MCP servers:
 
-| Tool | Description |
-|------|-------------|
-| `mcp-inspect` | Display server info, capabilities, tools, resources, prompts |
-| `mcp-call` | Call a specific tool with JSON arguments |
-| `mcp-read` | Read a resource by URI |
-| `mcp-prompt` | Get a prompt with arguments |
-| `mcp-shell` | Interactive REPL for exploring servers |
-| `mcp-remote-client` | Proxy stdio to remote HTTP/WebSocket MCP servers |
+| Tool                | Description                                                  |
+|---------------------+--------------------------------------------------------------|
+| =mcp-inspect=       | Display server info, capabilities, tools, resources, prompts |
+| =mcp-call=          | Call a specific tool with JSON arguments                     |
+| =mcp-read=          | Read a resource by URI                                       |
+| =mcp-prompt=        | Get a prompt with arguments                                  |
+| =mcp-shell=         | Interactive REPL for exploring servers                       |
+| =mcp-remote-client= | Proxy stdio to remote HTTP/WebSocket MCP servers             |
 
 Build and use:
 
-```bash
+#+begin_src sh
 # Build tools (requires readline-devel for mcp-shell)
 make tools
 
@@ -277,69 +266,64 @@ make tools
 
 # Bridge stdio to a remote HTTP server
 ./build/mcp-remote-client --http https://api.example.com/mcp
-```
+#+end_src
 
-See [docs/cli-tools.md](docs/cli-tools.md) for complete documentation.
+See [[file:docs/cli-tools.org]] for complete documentation.
 
-## Testing
-
+** Testing
 Run the test suite:
 
-```bash
+#+begin_src sh
 make test
-```
+#+end_src
 
 Tests include:
+
 - Unit tests for all core types (enums, content, tools, resources, prompts, tasks)
 - Protocol tests for message encoding/decoding
 - Server and client tests with mock transport
 - Integration tests with linked transport pair
 
-## API Overview
+** API Overview
+*** Core Types
+| Type                  | Description                                    |
+|-----------------------+------------------------------------------------|
+| =McpServer=           | MCP server - exposes tools, resources, prompts |
+| =McpClient=           | MCP client - connects to servers               |
+| =McpTool=             | Tool definition with JSON schema               |
+| =McpResource=         | Resource definition (URI, name, mime-type)     |
+| =McpResourceTemplate= | URI template for dynamic resources             |
+| =McpPrompt=           | Prompt template with arguments                 |
+| =McpTask=             | Long-running operation (experimental)          |
 
-### Core Types
+*** Transport Types
+| Type                | Description                  |
+|---------------------+------------------------------|
+| =McpTransport=      | Abstract transport interface |
+| =McpStdioTransport= | Stdio-based transport        |
 
-| Type | Description |
-|------|-------------|
-| `McpServer` | MCP server - exposes tools, resources, prompts |
-| `McpClient` | MCP client - connects to servers |
-| `McpTool` | Tool definition with JSON schema |
-| `McpResource` | Resource definition (URI, name, mime-type) |
-| `McpResourceTemplate` | URI template for dynamic resources |
-| `McpPrompt` | Prompt template with arguments |
-| `McpTask` | Long-running operation (experimental) |
+*** Result Types (Boxed)
+| Type                  | Description                 |
+|-----------------------+-----------------------------|
+| =McpToolResult=       | Result from tool invocation |
+| =McpResourceContents= | Content from resource read  |
+| =McpPromptResult=     | Result from prompt get      |
+| =McpPromptMessage=    | Message in prompt result    |
 
-### Transport Types
-
-| Type | Description |
-|------|-------------|
-| `McpTransport` | Abstract transport interface |
-| `McpStdioTransport` | Stdio-based transport |
-
-### Result Types (Boxed)
-
-| Type | Description |
-|------|-------------|
-| `McpToolResult` | Result from tool invocation |
-| `McpResourceContents` | Content from resource read |
-| `McpPromptResult` | Result from prompt get |
-| `McpPromptMessage` | Message in prompt result |
-
-## Language Bindings
-
+** Language Bindings
 Generate GObject Introspection files:
 
-```bash
+#+begin_src sh
 make gir
-```
+#+end_src
 
 This creates:
-- `build/Mcp-1.0.gir` - GIR XML file
-- `build/Mcp-1.0.typelib` - Compiled typelib
 
-### Python Example
+- =build/Mcp-1.0.gir= - GIR XML file
+- =build/Mcp-1.0.typelib= - Compiled typelib
 
-```python
+*** Python Example
+#+begin_src python
 import gi
 gi.require_version('Mcp', '1.0')
 from gi.repository import Mcp, GLib
@@ -347,27 +331,24 @@ from gi.repository import Mcp, GLib
 # Create a server
 server = Mcp.Server.new("python-server", "1.0.0")
 # ... add tools, resources, prompts
-```
+#+end_src
 
-## License
-
+** License
 AGPL-3.0-or-later
 
 Copyright (C) 2025 Copyleft Games
 
-## Documentation
+** Documentation
+See [[file:docs/]] for detailed documentation:
 
-See [docs/](docs/) for detailed documentation:
+- [[file:docs/building.org][Building]] - Build instructions and dependencies
+- [[file:docs/server-guide.org][Server Guide]] - How to create MCP servers
+- [[file:docs/client-guide.org][Client Guide]] - How to create MCP clients
+- [[file:docs/cli-tools.org][CLI Tools]] - Command-line tools for MCP servers
+- [[file:docs/api-reference.org][API Reference]] - Complete API documentation
 
-- [Building](docs/building.md) - Build instructions and dependencies
-- [Server Guide](docs/server-guide.md) - How to create MCP servers
-- [Client Guide](docs/client-guide.md) - How to create MCP clients
-- [CLI Tools](docs/cli-tools.md) - Command-line tools for MCP servers
-- [API Reference](docs/api-reference.md) - Complete API documentation
-
-## References
-
-- [MCP Specification](https://spec.modelcontextprotocol.io/)
-- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
-- [GObject Manual](https://docs.gtk.org/gobject/)
-- [libdex Documentation](https://gnome.pages.gitlab.gnome.org/libdex/)
+** References
+- [[https://spec.modelcontextprotocol.io/][MCP Specification]]
+- [[https://www.jsonrpc.org/specification][JSON-RPC 2.0 Specification]]
+- [[https://docs.gtk.org/gobject/][GObject Manual]]
+- [[https://gnome.pages.gitlab.gnome.org/libdex/][libdex Documentation]]

@@ -1,17 +1,15 @@
-# MCP Client Guide
-
+* MCP Client Guide
 This guide explains how to create MCP clients using mcp-glib.
 
-## Overview
-
+** Overview
 An MCP client connects to servers to access their capabilities:
-- **Tools** - Functions to call
-- **Resources** - Data to read
-- **Prompts** - Templates to use
 
-## Basic Client Structure
+- *Tools* - Functions to call
+- *Resources* - Data to read
+- *Prompts* - Templates to use
 
-```c
+** Basic Client Structure
+#+begin_src C
 #include <mcp/mcp.h>
 
 static GMainLoop *main_loop = NULL;
@@ -68,15 +66,13 @@ main (int argc, char *argv[])
 
     return 0;
 }
-```
+#+end_src
 
-## Connecting to Servers
-
-### Subprocess Transport
-
+** Connecting to Servers
+*** Subprocess Transport
 Spawn a server as a subprocess:
 
-```c
+#+begin_src C
 g_autoptr(McpStdioTransport) transport = NULL;
 g_autoptr(GError) error = NULL;
 
@@ -86,13 +82,12 @@ transport = mcp_stdio_transport_new_subprocess_simple ("./my-server", &error);
 /* With arguments */
 transport = mcp_stdio_transport_new_subprocess_simple (
     "./my-server --port 8080", &error);
-```
+#+end_src
 
-### Getting Server Info
-
+*** Getting Server Info
 After connecting, get server information:
 
-```c
+#+begin_src C
 static void
 on_connected (GObject *source, GAsyncResult *result, gpointer user_data)
 {
@@ -117,13 +112,11 @@ on_connected (GObject *source, GAsyncResult *result, gpointer user_data)
         g_print ("Instructions: %s\n", instructions);
     }
 }
-```
+#+end_src
 
-## Listing Capabilities
-
-### List Tools
-
-```c
+** Listing Capabilities
+*** List Tools
+#+begin_src C
 static void
 on_tools_listed (GObject      *source,
                  GAsyncResult *result,
@@ -155,11 +148,10 @@ on_tools_listed (GObject      *source,
 
 /* Call it */
 mcp_client_list_tools_async (client, NULL, on_tools_listed, NULL);
-```
+#+end_src
 
-### List Resources
-
-```c
+*** List Resources
+#+begin_src C
 static void
 on_resources_listed (GObject      *source,
                      GAsyncResult *result,
@@ -190,11 +182,10 @@ on_resources_listed (GObject      *source,
 }
 
 mcp_client_list_resources_async (client, NULL, on_resources_listed, NULL);
-```
+#+end_src
 
-### List Prompts
-
-```c
+*** List Prompts
+#+begin_src C
 static void
 on_prompts_listed (GObject      *source,
                    GAsyncResult *result,
@@ -225,11 +216,10 @@ on_prompts_listed (GObject      *source,
 }
 
 mcp_client_list_prompts_async (client, NULL, on_prompts_listed, NULL);
-```
+#+end_src
 
-## Calling Tools
-
-```c
+** Calling Tools
+#+begin_src C
 static void
 on_tool_called (GObject      *source,
                 GAsyncResult *result,
@@ -284,11 +274,10 @@ json_object_set_int_member (args, "count", 5);
 /* Call tool */
 mcp_client_call_tool_async (client, "my-tool", args, NULL,
                             on_tool_called, NULL);
-```
+#+end_src
 
-## Reading Resources
-
-```c
+** Reading Resources
+#+begin_src C
 static void
 on_resource_read (GObject      *source,
                   GAsyncResult *result,
@@ -336,11 +325,10 @@ on_resource_read (GObject      *source,
 /* Read resource by URI */
 mcp_client_read_resource_async (client, "file:///readme", NULL,
                                  on_resource_read, NULL);
-```
+#+end_src
 
-## Getting Prompts
-
-```c
+** Getting Prompts
+#+begin_src C
 static void
 on_prompt_get (GObject      *source,
                GAsyncResult *result,
@@ -394,13 +382,12 @@ g_hash_table_insert (args, g_strdup ("name"), g_strdup ("World"));
 /* Get prompt */
 mcp_client_get_prompt_async (client, "greeting", args, NULL,
                               on_prompt_get, NULL);
-```
+#+end_src
 
-## Handling Notifications
-
+** Handling Notifications
 The client receives notifications from the server:
 
-```c
+#+begin_src C
 /* Tools changed */
 g_signal_connect (client, "tools-changed",
                   G_CALLBACK (on_tools_changed), NULL);
@@ -416,13 +403,12 @@ g_signal_connect (client, "prompts-changed",
 /* Resource updated (for subscribed resources) */
 g_signal_connect (client, "resource-updated",
                   G_CALLBACK (on_resource_updated), NULL);
-```
+#+end_src
 
-## Resource Subscriptions
-
+** Resource Subscriptions
 Subscribe to resource updates:
 
-```c
+#+begin_src C
 /* Subscribe */
 mcp_client_subscribe_resource (client, "file:///config.json");
 
@@ -440,13 +426,12 @@ on_resource_updated (McpClient   *client,
 
 /* Unsubscribe */
 mcp_client_unsubscribe_resource (client, "file:///config.json");
-```
+#+end_src
 
-## Client Capabilities
-
+** Client Capabilities
 Configure client capabilities before connecting:
 
-```c
+#+begin_src C
 McpClientCapabilities *caps = mcp_client_get_capabilities (client);
 
 /* Enable experimental features */
@@ -454,13 +439,12 @@ mcp_client_capabilities_set_experimental (caps, "tasks", TRUE);
 
 /* Enable sampling */
 mcp_client_capabilities_set_sampling (caps, TRUE);
-```
+#+end_src
 
-## Error Handling
-
+** Error Handling
 All async operations can fail. Always check for errors:
 
-```c
+#+begin_src C
 static void
 on_complete (GObject      *source,
              GAsyncResult *result,
@@ -489,11 +473,11 @@ on_complete (GObject      *source,
 
     /* Success - process result */
 }
-```
+#+end_src
 
-## Complete Example
+** Complete Example
+See =examples/simple-client.c= for a complete working example that:
 
-See `examples/simple-client.c` for a complete working example that:
 - Connects to a server subprocess
 - Lists tools, resources, and prompts
 - Calls a tool
