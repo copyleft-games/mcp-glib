@@ -847,6 +847,45 @@ mcp_server_list_tools (McpServer *self)
     return g_list_reverse (list);
 }
 
+/*
+ * Synchronous in-process tool invocation.  Mirrors the handler
+ * lookup in handle_tools_call() but skips the transport round-trip.
+ * Sync handlers only — async (Tasks API) handlers aren't reachable
+ * here because they expect an McpTask scaffolded by handle_tools_call.
+ */
+McpToolResult *
+mcp_server_invoke_tool (McpServer    *self,
+                        const gchar  *name,
+                        JsonObject   *arguments,
+                        GError      **error)
+{
+    HandlerData    *hd;
+    McpToolHandler  handler;
+
+    g_return_val_if_fail (MCP_IS_SERVER (self), NULL);
+    g_return_val_if_fail (name != NULL, NULL);
+
+    if (!g_hash_table_contains (self->tools, name))
+    {
+        g_set_error (error, MCP_ERROR, MCP_ERROR_TOOL_NOT_FOUND,
+                     "mcp_server_invoke_tool: unknown tool '%s'", name);
+        return NULL;
+    }
+
+    hd = g_hash_table_lookup (self->tool_handlers, name);
+    if (hd == NULL || hd->handler == NULL)
+    {
+        g_set_error (error, MCP_ERROR, MCP_ERROR_METHOD_NOT_FOUND,
+                     "mcp_server_invoke_tool: tool '%s' has no sync "
+                     "handler (async tools are not supported here)",
+                     name);
+        return NULL;
+    }
+
+    handler = (McpToolHandler) hd->handler;
+    return handler (self, name, arguments, hd->user_data);
+}
+
 /* Resource management */
 
 void

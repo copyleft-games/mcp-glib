@@ -293,6 +293,37 @@ gboolean mcp_server_remove_tool (McpServer   *self,
  */
 GList *mcp_server_list_tools (McpServer *self);
 
+/**
+ * mcp_server_invoke_tool:
+ * @self: an #McpServer
+ * @name: the tool name (as registered via mcp_server_add_tool())
+ * @arguments: (nullable): JSON object of arguments (per the tool's input
+ *   schema), or %NULL for tools that take none
+ * @error: (out) (optional): return location for a #GError, or %NULL
+ *
+ * Looks up the synchronous handler registered for @name and invokes it
+ * directly, returning its #McpToolResult.  This is the in-process
+ * equivalent of a `tools/call` JSON-RPC request: the same handler runs
+ * with the same arguments, but the call doesn't traverse a transport.
+ *
+ * Intended for embedded hosts that need to invoke their own tools from
+ * inside the same process — e.g. an AI runtime that wants to expose
+ * the server's tool surface to a model's tool-use loop without dialling
+ * its own socket.
+ *
+ * Async handlers (registered via the Tasks API) are NOT dispatched by
+ * this function; only synchronous handlers (mcp_server_add_tool()) are
+ * eligible.
+ *
+ * Returns: (transfer full) (nullable): the tool's #McpToolResult on
+ *   success, or %NULL on error.  On %NULL, @error is set (e.g.
+ *   %MCP_ERROR_TOOL_NOT_FOUND when @name is unknown).
+ */
+McpToolResult *mcp_server_invoke_tool (McpServer    *self,
+                                       const gchar  *name,
+                                       JsonObject   *arguments,
+                                       GError      **error);
+
 /* Resource management */
 
 /**
