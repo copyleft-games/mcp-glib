@@ -8,6 +8,7 @@
 #include <glib.h>
 #include <gio/gio.h>
 #include <gio/gunixsocketaddress.h>
+#include <string.h>
 #include <unistd.h>
 #include "mcp.h"
 
@@ -582,6 +583,115 @@ test_unix_socket_server_dispose_stops (void)
 }
 
 /* ============================================================================
+ * Connect/disconnect race regression (UAF in the session-start path)
+ * ========================================================================== */
+
+/*
+ * test_unix_socket_server_connect_disconnect_race:
+ *
+ * Regression guard for a use-after-free. A client that connects and then
+ * disconnects can drive its transport to DISCONNECTED (-> remove_session
+ * -> the session is freed) BEFORE the per-connection
+ * mcp_server_start_async() completion idle fires. The completion callback
+ * (on_session_server_started) then dereferenced the freed session
+ * (session->server) -> SIGSEGV. The fix refcounts the session so it
+ * outlives the in-flight async start.
+ *
+ * This churns batches of simultaneous connect+immediate-close, which
+ * empirically reproduces the window (sequential connect/close lets the
+ * start idle always win and does NOT trigger it). Pre-fix this crashes
+ * (SIGSEGV) or trips ASan; post-fix it must survive, reap every session
+ * (no leak), and leave the server responsive. Run under -fsanitize=address
+ * to make the detection deterministic.
+ */
+static gboolean
+race_test_nonfatal_remote_close (
+	const gchar    *log_domain,
+	GLogLevelFlags  log_level,
+	const gchar    *message,
+	gpointer        user_data
+){
+	(void)log_domain;
+	(void)log_level;
+	(void)user_data;
+
+	/* A client that disconnects mid-handshake makes the transport log a
+	 * "Remote end closed connection" warning -- expected and benign for this
+	 * churn test (it is normal client behaviour, not a server fault). Keep it
+	 * non-fatal so the deliberate disconnects don't abort the test; every
+	 * other warning stays fatal so a real regression still fails the run. */
+	if (message != NULL &&
+	    strstr (message, "Remote end closed connection") != NULL)
+		return FALSE;
+
+	return TRUE;
+}
+
+static void
+test_unix_socket_server_connect_disconnect_race (void)
+{
+	g_autofree gchar *path = NULL;
+	g_autoptr(McpUnixSocketServer) server = NULL;
+	g_autoptr(GError) error = NULL;
+	g_autoptr(GSocketConnection) final_conn = NULL;
+	gint round, i;
+
+	/* The deliberate mid-handshake disconnects log expected transport
+	 * warnings; keep those (and only those) non-fatal for this run. */
+	g_test_log_set_fatal_handler (race_test_nonfatal_remote_close, NULL);
+
+	path = make_test_socket_path ("race");
+	server = mcp_unix_socket_server_new ("test", "1.0.0", path);
+
+	g_assert_true (mcp_unix_socket_server_start (server, &error));
+	g_assert_no_error (error);
+
+	for (round = 0; round < 80; round++)
+	{
+		GSocketConnection *batch[8];
+
+		/* Open a batch of connections (sessions begin starting). */
+		for (i = 0; i < 8; i++)
+			batch[i] = connect_client (path, NULL);
+
+		/* Let the server accept + queue per-connection start_async. */
+		g_main_context_iteration (NULL, FALSE);
+		g_main_context_iteration (NULL, FALSE);
+
+		/* Close them all at once: each transport's DISCONNECTED races
+		 * its still-pending start completion. */
+		for (i = 0; i < 8; i++)
+		{
+			if (batch[i] == NULL)
+				continue;
+			g_io_stream_close (G_IO_STREAM (batch[i]), NULL, NULL);
+			g_object_unref (batch[i]);
+		}
+
+		/* Drain: start-completion idles + disconnect handlers run here. */
+		for (i = 0; i < 6; i++)
+			g_main_context_iteration (NULL, FALSE);
+	}
+
+	/* Fully drain any stragglers. */
+	for (i = 0; i < 80; i++)
+		g_main_context_iteration (NULL, FALSE);
+
+	/* Survived the churn (no UAF) and every session was reaped. */
+	g_assert_cmpuint (mcp_unix_socket_server_get_session_count (server),
+	                  ==, 0);
+
+	/* Server is still responsive after the churn. */
+	final_conn = connect_client (path, &error);
+	g_assert_no_error (error);
+	g_assert_nonnull (final_conn);
+	for (i = 0; i < 10; i++)
+		g_main_context_iteration (NULL, FALSE);
+
+	mcp_unix_socket_server_stop (server);
+}
+
+/* ============================================================================
  * Main
  * ========================================================================== */
 
@@ -639,6 +749,8 @@ main (gint argc, gchar **argv)
 	                 test_unix_socket_server_stop_closes_all_sessions);
 	g_test_add_func ("/mcp/unix-socket-server/session/dispose-stops",
 	                 test_unix_socket_server_dispose_stops);
+	g_test_add_func ("/mcp/unix-socket-server/session/connect-disconnect-race",
+	                 test_unix_socket_server_connect_disconnect_race);
 
 	return g_test_run ();
 }

@@ -1259,7 +1259,14 @@ on_transport_error (McpTransport *transport,
 {
     McpServer *self = MCP_SERVER (user_data);
 
-    g_warning ("Transport error: %s", error->message);
+    /* A peer disconnecting (clean EOF) is routine for a server, not a fault;
+     * log it at debug level so a busy server churning client connections does
+     * not flood the logs (or abort g_test runs) with warnings. Genuine
+     * transport faults still warn. */
+    if (g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
+        g_debug ("Transport closed: %s", error->message);
+    else
+        g_warning ("Transport error: %s", error->message);
 
     if (self->run_error == NULL)
     {

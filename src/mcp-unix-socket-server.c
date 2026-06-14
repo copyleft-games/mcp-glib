@@ -14,6 +14,7 @@
 #include "mcp-server.h"
 #include "mcp-stdio-transport.h"
 #include "mcp-transport.h"
+#include "mcp-error.h"
 
 #include <glib.h>
 #include <gio/gio.h>
@@ -38,6 +39,8 @@ struct _McpUnixSocketSession
 	GSocketConnection     *connection;
 	McpUnixSocketServer   *owner;             /* unowned back-ref */
 	gulong                 state_handler_id;
+	gint                   refcount;          /* list ref + in-flight async start */
+	gboolean               torn_down;         /* owned resources already released */
 };
 
 /* ===== GObject struct ===== */
@@ -92,32 +95,70 @@ static GParamSpec *properties[N_PROPERTIES];
 /* ===== Session lifecycle helpers ===== */
 
 /*
- * session_free:
+ * Session reference counting and teardown.
  *
- * Disconnects signal handlers, stops the server, and frees all
- * resources owned by a session. Safe to call with NULL.
+ * The session must OUTLIVE the in-flight mcp_server_start_async() completion.
+ * Its transport can emit "state-changed" -> DISCONNECTED/ERROR (e.g. a client
+ * that connects then immediately drops) BEFORE the start-completion idle fires
+ * on_session_server_started() -- which dereferences the session.  Without a
+ * reference count, on_session_transport_state_changed -> remove_session frees
+ * the session first, and the pending idle then reads freed memory
+ * (use-after-free -> SIGSEGV).  So the session carries two references: one for
+ * the session list, one for each in-flight async start; the STRUCT is freed
+ * only when both are released.
+ *
+ * Resource RELEASE, however, is eager and decoupled from struct lifetime:
+ * session_teardown() disconnects the transport handler, stops the server, and
+ * drops the owned objects the instant the session leaves the list (a disconnect
+ * or a server stop) -- exactly as the original code did, so no late, benign
+ * "remote end closed" transport warning fires after the owner is gone, and a
+ * pending start callback never operates on a half-dead server.  session_unref()
+ * only frees the (already-emptied) struct once the last ref drops.  This keeps
+ * the UAF fixed while restoring the original teardown timing.
  */
 static void
-session_free (McpUnixSocketSession *session)
+session_teardown (McpUnixSocketSession *session)
 {
-	if (session == NULL)
+	if (session == NULL || session->torn_down)
 		return;
 
-	/* Disconnect transport signal handler before stopping */
+	session->torn_down = TRUE;
+
 	if (session->transport != NULL && session->state_handler_id > 0)
+	{
 		g_signal_handler_disconnect (session->transport,
 		                             session->state_handler_id);
+		session->state_handler_id = 0;
+	}
 
 	if (session->server != NULL)
 	{
 		mcp_server_stop (session->server);
-		g_object_unref (session->server);
+		g_clear_object (&session->server);
 	}
-	if (session->transport != NULL)
-		g_object_unref (session->transport);
-	if (session->connection != NULL)
-		g_object_unref (session->connection);
+	g_clear_object (&session->transport);
+	g_clear_object (&session->connection);
+}
 
+static McpUnixSocketSession *
+session_ref (McpUnixSocketSession *session)
+{
+	if (session != NULL)
+		g_atomic_int_inc (&session->refcount);
+	return session;
+}
+
+static void
+session_unref (McpUnixSocketSession *session)
+{
+	if (session == NULL)
+		return;
+	if (!g_atomic_int_dec_and_test (&session->refcount))
+		return;
+
+	/* Last reference gone: ensure resources are released (idempotent), then
+	 * free the struct. */
+	session_teardown (session);
 	g_free (session);
 }
 
@@ -174,13 +215,16 @@ remove_session (
 	/* Remove from list first to prevent reentrant issues */
 	self->sessions = g_list_remove (self->sessions, session);
 
-	/* Emit session-closed before freeing */
+	/* Emit session-closed before tearing down (still has its server) */
 	g_signal_emit (self, signals[SIGNAL_SESSION_CLOSED], 0, session->server);
 
 	g_object_notify_by_pspec (G_OBJECT (self),
 	                          properties[PROP_SESSION_COUNT]);
 
-	session_free (session);
+	/* Release resources now; the struct survives for any in-flight async
+	 * start, then session_unref drops the list reference. */
+	session_teardown (session);
+	session_unref (session);
 }
 
 /*
@@ -202,16 +246,36 @@ on_session_server_started (
 
 	session = (McpUnixSocketSession *)user_data;
 
+	/* If the session was already torn down (its transport disconnected, or
+	 * the server was stopped) while this start was in flight, its server and
+	 * owner back-ref are gone -- do not touch them; just drop the async ref.
+	 * The GTask keeps its own source object alive until this returns, so the
+	 * unretrieved result is freed with the task; not calling _finish is safe. */
+	if (session->torn_down)
+	{
+		session_unref (session);
+		return;
+	}
+
 	if (!mcp_server_start_finish (session->server, result, &error))
 	{
-		g_warning ("mcp-unix-socket-server: session start failed: %s",
-		           error->message);
+		/* The client disconnecting before the handshake completes is
+		 * routine, not a server fault -- log it at debug level. */
+		if (g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
+			g_debug ("mcp-unix-socket-server: session start aborted: %s",
+			         error->message);
+		else
+			g_warning ("mcp-unix-socket-server: session start failed: %s",
+			           error->message);
 		remove_session (session->owner, session);
 	}
 	else
 	{
 		g_debug ("mcp-unix-socket-server: session started");
 	}
+
+	/* Release the async-op reference taken in on_incoming. */
+	session_unref (session);
 }
 
 /* ===== Socket incoming handler ===== */
@@ -242,6 +306,7 @@ on_incoming (
 	self = MCP_UNIX_SOCKET_SERVER (user_data);
 
 	session = g_new0 (McpUnixSocketSession, 1);
+	session->refcount   = 1;        /* held by the session list */
 	session->owner      = self;     /* unowned back-ref */
 	session->connection = g_object_ref (connection);
 
@@ -273,9 +338,12 @@ on_incoming (
 		MCP_TRANSPORT (session->transport), "state-changed",
 		G_CALLBACK (on_session_transport_state_changed), session);
 
-	/* Start the MCP handshake */
+	/* Start the MCP handshake.  Hold an extra ref for the duration of the
+	 * async op: on_session_server_started releases it, and that keeps the
+	 * session alive even if the transport disconnects before it fires. */
 	mcp_server_start_async (session->server, NULL,
-	                        on_session_server_started, session);
+	                        on_session_server_started,
+	                        session_ref (session));
 
 	g_debug ("mcp-unix-socket-server: accepted connection");
 	return TRUE;
@@ -427,14 +495,18 @@ mcp_unix_socket_server_stop (McpUnixSocketServer *self)
 
 		session = (McpUnixSocketSession *)self->sessions->data;
 
-		/* Emit session-closed */
+		/* Emit session-closed (still has its server) */
 		g_signal_emit (self, signals[SIGNAL_SESSION_CLOSED], 0,
 		               session->server);
 
 		/* Remove from list before freeing to avoid reentrant issues */
 		self->sessions = g_list_delete_link (self->sessions,
 		                                     self->sessions);
-		session_free (session);
+
+		/* Release resources now; struct survives for any in-flight async
+		 * start, then session_unref drops the list reference. */
+		session_teardown (session);
+		session_unref (session);
 	}
 
 	g_object_notify_by_pspec (G_OBJECT (self),
