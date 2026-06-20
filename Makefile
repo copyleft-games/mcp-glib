@@ -151,7 +151,7 @@ WARNINGS    := -Wall -Wextra -Wno-unused-parameter
 ifeq ($(DEBUG),1)
 DEBUG_FLAGS := -g -O0
 else
-DEBUG_FLAGS := -Og -g
+DEBUG_FLAGS :=
 endif
 PKG_CFLAGS  := $(shell $(PKG_CONFIG) --cflags $(PKG_DEPS))
 PKG_LIBS    := $(shell $(PKG_CONFIG) --libs $(PKG_DEPS))
