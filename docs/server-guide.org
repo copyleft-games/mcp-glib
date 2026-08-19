@@ -390,3 +390,38 @@ See =examples/filesystem-server.c= for:
 - Resource templates
 - File serving
 - Path validation
+
+** JSON-RPC ids keep their type
+
+JSON-RPC 2.0 requires a response id to be *identical* to the request's --- the
+type as well as the value. A strict client compares both.
+
+mcp-glib exposes ids as strings, because that is one type for what the wire
+allows to be a string or a number. The originating type is carried alongside:
+
+- =mcp_request_get_id_is_number()= --- whether the id arrived as a JSON number.
+- =mcp_response_set_id_is_number()= / =mcp_error_response_set_id_is_number()=
+  --- answer in kind.
+
+=McpServer= does this for you; it matters only if you build responses yourself.
+
+#+begin_src c
+  response = mcp_response_new (mcp_request_get_id (request), result);
+  mcp_response_set_id_is_number (response,
+                                 mcp_request_get_id_is_number (request));
+#+end_src
+
+A string id that merely *looks* numeric still comes back quoted --- that is the
+other half of the same rule, and it is why the flag exists instead of a
+"does this parse as an integer" test at serialisation time.
+
+*This is not cosmetic.* Answering =\{"id": 0\}= with =\{"id": "0"\}= makes a
+strict client reject the handshake, and the error it prints reads as nonsense
+--- =conflict initialized response id: expected 0, got 0= --- because both sides
+render the same and only one is a number. The visible symptom is a client with
+no tools and nothing in any log explaining why. Lenient clients never notice,
+so this can survive a long time against one client and fail immediately against
+another.
+
+Anything embedding an older mcp-glib keeps the old behaviour until it is
+rebuilt.
