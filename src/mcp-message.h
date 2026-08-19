@@ -154,6 +154,29 @@ McpRequest *mcp_request_new_with_params (const gchar *method,
 const gchar *mcp_request_get_id (McpRequest *self);
 
 /**
+ * mcp_request_get_id_is_number:
+ * @self: an #McpRequest
+ *
+ * Whether this request's id arrived as a JSON number.
+ *
+ * JSON-RPC 2.0 requires a response id to be identical to the request's,
+ * type included.  Ids are exposed as strings here, so a server that
+ * builds a reply must carry this across or a numeric id comes back
+ * quoted -- which a strict client rejects.
+ *
+ * Returns: %TRUE when the wire form was a number
+ */
+gboolean mcp_request_get_id_is_number (McpRequest *self);
+
+/**
+ * mcp_request_set_id_is_number:
+ * @self: an #McpRequest
+ * @is_number: whether the id arrived as a JSON number
+ */
+void mcp_request_set_id_is_number (McpRequest *self, gboolean is_number);
+
+
+/**
  * mcp_request_get_method:
  * @self: an #McpRequest
  *
@@ -212,6 +235,16 @@ McpResponse *mcp_response_new (const gchar *id,
  * Returns: (transfer none): the response ID
  */
 const gchar *mcp_response_get_id (McpResponse *self);
+
+/**
+ * mcp_response_set_id_is_number:
+ * @self: an #McpResponse
+ * @is_number: whether to serialise the id as a JSON number
+ *
+ * Answers a numeric request id in kind; see
+ * mcp_request_get_id_is_number().
+ */
+void mcp_response_set_id_is_number (McpResponse *self, gboolean is_number);
 
 /**
  * mcp_response_get_result:
@@ -282,6 +315,14 @@ McpErrorResponse *mcp_error_response_new_from_gerror (const gchar  *id,
  * Returns: (transfer none) (nullable): the response ID, or %NULL for parse errors
  */
 const gchar *mcp_error_response_get_id (McpErrorResponse *self);
+
+/**
+ * mcp_error_response_set_id_is_number:
+ * @self: an #McpErrorResponse
+ * @is_number: whether to serialise the id as a JSON number
+ */
+void mcp_error_response_set_id_is_number (McpErrorResponse *self,
+                                          gboolean is_number);
 
 /**
  * mcp_error_response_get_code:

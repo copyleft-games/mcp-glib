@@ -260,11 +260,16 @@ get_request_params_object (McpRequest *request)
     return NULL;
 }
 
+/* These take the request rather than its id string so the reply can echo
+ * the id's JSON type.  JSON-RPC 2.0 requires the response id to be
+ * identical to the request's, and a strict client checks the type: a
+ * numeric id answered as a string fails the handshake outright.  NULL is
+ * allowed, for a parse error with no request to answer. */
 static void send_response       (McpServer   *self,
-                                 const gchar *id,
+                                 McpRequest  *request,
                                  JsonNode    *result);
 static void send_error_response (McpServer   *self,
-                                 const gchar *id,
+                                 McpRequest  *request,
                                  gint         code,
                                  const gchar *message,
                                  JsonNode    *data);
@@ -1298,7 +1303,7 @@ send_message_cb (GObject      *source,
 
 static void
 send_response (McpServer   *self,
-               const gchar *id,
+               McpRequest  *request,
                JsonNode    *result)
 {
     g_autoptr(McpResponse) response = NULL;
@@ -1311,7 +1316,12 @@ send_response (McpServer   *self,
     }
 
     /* mcp_response_new takes ownership of the node */
-    response = mcp_response_new (id, g_steal_pointer (&result_owned));
+    response = mcp_response_new (request != NULL ? mcp_request_get_id (request)
+                                                : NULL,
+                                 g_steal_pointer (&result_owned));
+    mcp_response_set_id_is_number (
+        response,
+        request != NULL && mcp_request_get_id_is_number (request));
     node = mcp_message_to_json (MCP_MESSAGE (response));
 
     mcp_transport_send_message_async (self->transport, node, NULL,
@@ -1320,7 +1330,7 @@ send_response (McpServer   *self,
 
 static void
 send_error_response (McpServer   *self,
-                     const gchar *id,
+                     McpRequest  *request,
                      gint         code,
                      const gchar *message,
                      JsonNode    *data)
@@ -1333,7 +1343,11 @@ send_error_response (McpServer   *self,
         return;
     }
 
-    error_resp = mcp_error_response_new (id, code, message);
+    error_resp = mcp_error_response_new (
+        request != NULL ? mcp_request_get_id (request) : NULL, code, message);
+    mcp_error_response_set_id_is_number (
+        error_resp,
+        request != NULL && mcp_request_get_id_is_number (request));
     if (data != NULL)
     {
         mcp_error_response_set_data (error_resp, data);
@@ -1386,7 +1400,7 @@ handle_initialize (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing params", NULL);
         return;
@@ -1458,7 +1472,7 @@ handle_initialize (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1487,7 +1501,7 @@ handle_tools_list (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1505,7 +1519,7 @@ handle_tools_call (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "name"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing tool name", NULL);
         return;
@@ -1515,7 +1529,7 @@ handle_tools_call (McpServer  *self,
 
     if (!g_hash_table_contains (self->tools, name))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_METHOD_NOT_FOUND,
                              "Unknown tool", NULL);
         return;
@@ -1613,7 +1627,7 @@ handle_tools_call (McpServer  *self,
             result = json_builder_get_root (builder);
         }
 
-        send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+        send_response (self, request, g_steal_pointer (&result));
         return;
     }
 
@@ -1633,7 +1647,7 @@ handle_tools_call (McpServer  *self,
     }
 
     result = mcp_tool_result_to_json (tool_result);
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1662,7 +1676,7 @@ handle_resources_list (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1691,7 +1705,7 @@ handle_resources_templates_list (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1710,7 +1724,7 @@ handle_resources_read (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "uri"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing resource URI", NULL);
         return;
@@ -1753,7 +1767,7 @@ handle_resources_read (McpServer  *self,
 
     if (contents == NULL)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Resource not found", NULL);
         return;
@@ -1777,7 +1791,7 @@ handle_resources_read (McpServer  *self,
 
     g_list_free_full (contents, (GDestroyNotify) mcp_resource_contents_unref);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1790,7 +1804,7 @@ handle_resources_subscribe (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "uri"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing resource URI", NULL);
         return;
@@ -1800,7 +1814,7 @@ handle_resources_subscribe (McpServer  *self,
 
     g_hash_table_insert (self->subscriptions, g_strdup (uri), GINT_TO_POINTER (TRUE));
 
-    send_response (self, mcp_request_get_id (request), json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
 }
 
 static void
@@ -1813,7 +1827,7 @@ handle_resources_unsubscribe (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "uri"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing resource URI", NULL);
         return;
@@ -1823,7 +1837,7 @@ handle_resources_unsubscribe (McpServer  *self,
 
     g_hash_table_remove (self->subscriptions, uri);
 
-    send_response (self, mcp_request_get_id (request), json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
 }
 
 static void
@@ -1852,7 +1866,7 @@ handle_prompts_list (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -1871,7 +1885,7 @@ handle_prompts_get (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "name"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing prompt name", NULL);
         return;
@@ -1881,7 +1895,7 @@ handle_prompts_get (McpServer  *self,
 
     if (!g_hash_table_contains (self->prompts, name))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_METHOD_NOT_FOUND,
                              "Unknown prompt", NULL);
         return;
@@ -1926,14 +1940,14 @@ handle_prompts_get (McpServer  *self,
     }
 
     result = mcp_prompt_result_to_json (prompt_result);
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
 handle_ping (McpServer  *self,
              McpRequest *request)
 {
-    send_response (self, mcp_request_get_id (request), json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
 }
 
 static void
@@ -1954,7 +1968,7 @@ handle_completion_complete (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing params", NULL);
         return;
@@ -1963,7 +1977,7 @@ handle_completion_complete (McpServer  *self,
     /* Parse ref object */
     if (!json_object_has_member (params, "ref"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing ref", NULL);
         return;
@@ -1972,7 +1986,7 @@ handle_completion_complete (McpServer  *self,
     ref = json_object_get_object_member (params, "ref");
     if (ref == NULL || !json_object_has_member (ref, "type"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Invalid ref", NULL);
         return;
@@ -1985,7 +1999,7 @@ handle_completion_complete (McpServer  *self,
     {
         if (!json_object_has_member (ref, "name"))
         {
-            send_error_response (self, mcp_request_get_id (request),
+            send_error_response (self, request,
                                  MCP_ERROR_INVALID_PARAMS,
                                  "Missing prompt name", NULL);
             return;
@@ -1996,7 +2010,7 @@ handle_completion_complete (McpServer  *self,
     {
         if (!json_object_has_member (ref, "uri"))
         {
-            send_error_response (self, mcp_request_get_id (request),
+            send_error_response (self, request,
                                  MCP_ERROR_INVALID_PARAMS,
                                  "Missing resource uri", NULL);
             return;
@@ -2005,7 +2019,7 @@ handle_completion_complete (McpServer  *self,
     }
     else
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Unknown ref type", NULL);
         return;
@@ -2014,7 +2028,7 @@ handle_completion_complete (McpServer  *self,
     /* Parse argument object */
     if (!json_object_has_member (params, "argument"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing argument", NULL);
         return;
@@ -2023,7 +2037,7 @@ handle_completion_complete (McpServer  *self,
     argument = json_object_get_object_member (params, "argument");
     if (argument == NULL || !json_object_has_member (argument, "value"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Invalid argument", NULL);
         return;
@@ -2050,7 +2064,7 @@ handle_completion_complete (McpServer  *self,
     }
 
     result = mcp_completion_result_to_json (completion_result);
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 /* Forward declarations for Tasks API handlers */
@@ -2135,7 +2149,7 @@ handle_request (McpServer  *self,
     }
     else
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_METHOD_NOT_FOUND,
                              "Unknown method", NULL);
     }
@@ -2578,7 +2592,7 @@ handle_tasks_get (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "taskId"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing taskId", NULL);
         return;
@@ -2589,14 +2603,14 @@ handle_tasks_get (McpServer  *self,
 
     if (task == NULL)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Task not found", NULL);
         return;
     }
 
     result = mcp_task_to_json (task);
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 static void
@@ -2612,7 +2626,7 @@ handle_tasks_result (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "taskId"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing taskId", NULL);
         return;
@@ -2623,7 +2637,7 @@ handle_tasks_result (McpServer  *self,
 
     if (task == NULL)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Task not found", NULL);
         return;
@@ -2633,7 +2647,7 @@ handle_tasks_result (McpServer  *self,
     if (mcp_task_get_status (task) != MCP_TASK_STATUS_COMPLETED &&
         mcp_task_get_status (task) != MCP_TASK_STATUS_FAILED)
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Task not yet completed", NULL);
         return;
@@ -2651,7 +2665,7 @@ handle_tasks_result (McpServer  *self,
         result_node = mcp_tool_result_to_json (empty);
     }
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result_node));
+    send_response (self, request, g_steal_pointer (&result_node));
 }
 
 static void
@@ -2664,7 +2678,7 @@ handle_tasks_cancel (McpServer  *self,
     params = get_request_params_object (request);
     if (params == NULL || !json_object_has_member (params, "taskId"))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Missing taskId", NULL);
         return;
@@ -2674,13 +2688,13 @@ handle_tasks_cancel (McpServer  *self,
 
     if (!mcp_server_cancel_task (self, task_id))
     {
-        send_error_response (self, mcp_request_get_id (request),
+        send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
                              "Task not found", NULL);
         return;
     }
 
-    send_response (self, mcp_request_get_id (request), json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
 }
 
 static void
@@ -2709,7 +2723,7 @@ handle_tasks_list (McpServer  *self,
     json_builder_end_object (builder);
     result = json_builder_get_root (builder);
 
-    send_response (self, mcp_request_get_id (request), g_steal_pointer (&result));
+    send_response (self, request, g_steal_pointer (&result));
 }
 
 /* ========================================================================== */

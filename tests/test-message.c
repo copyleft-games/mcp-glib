@@ -700,6 +700,105 @@ test_notification_roundtrip (void)
                      mcp_notification_get_method (original));
 }
 
+
+/*
+ * JSON-RPC 2.0 section 5: the response id MUST be identical to the
+ * request's.  A strict client compares the TYPE too, so a numeric id
+ * answered as a string fails the handshake -- with an error that reads
+ * absurdly, along the lines of "expected 0, got 0", because both sides
+ * print the same.
+ *
+ * This shipped for a long time because ids are modelled here as strings
+ * and lenient clients never complained.  The cost was an agent session
+ * with no tools at all and nothing in any log to say why.
+ */
+static void
+test_numeric_id_stays_numeric (void)
+{
+    const gchar *wire =
+        "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\"}";
+    g_autoptr (McpMessage) msg = NULL;
+    g_autoptr (McpResponse) response = NULL;
+    g_autoptr (JsonNode) node = NULL;
+    g_autofree gchar *out = NULL;
+    JsonNode *result;
+    McpRequest *request;
+
+    msg = mcp_message_parse (wire, NULL);
+    g_assert_nonnull (msg);
+    g_assert_true (MCP_IS_REQUEST (msg));
+
+    request = MCP_REQUEST (msg);
+    g_assert_cmpstr (mcp_request_get_id (request), ==, "0");
+    g_assert_true (mcp_request_get_id_is_number (request));
+
+    result = json_node_new (JSON_NODE_OBJECT);
+    json_node_take_object (result, json_object_new ());
+    response = mcp_response_new (mcp_request_get_id (request), result);
+    mcp_response_set_id_is_number (response,
+                                   mcp_request_get_id_is_number (request));
+
+    node = mcp_message_to_json (MCP_MESSAGE (response));
+    out = json_to_string (node, FALSE);
+
+    /* Unquoted, as it arrived. */
+    g_assert_nonnull (strstr (out, "\"id\":0"));
+    g_assert_null (strstr (out, "\"id\":\"0\""));
+}
+
+static void
+test_string_id_stays_a_string (void)
+{
+    /* The other half of the same rule: an id that arrived quoted must
+     * not come back as a number just because it looks like one. */
+    const gchar *wire =
+        "{\"jsonrpc\":\"2.0\",\"id\":\"7\",\"method\":\"initialize\"}";
+    g_autoptr (McpMessage) msg = NULL;
+    g_autoptr (McpResponse) response = NULL;
+    g_autoptr (JsonNode) node = NULL;
+    g_autofree gchar *out = NULL;
+    JsonNode *result;
+    McpRequest *request;
+
+    msg = mcp_message_parse (wire, NULL);
+    g_assert_nonnull (msg);
+
+    request = MCP_REQUEST (msg);
+    g_assert_cmpstr (mcp_request_get_id (request), ==, "7");
+    g_assert_false (mcp_request_get_id_is_number (request));
+
+    result = json_node_new (JSON_NODE_OBJECT);
+    json_node_take_object (result, json_object_new ());
+    response = mcp_response_new (mcp_request_get_id (request), result);
+    mcp_response_set_id_is_number (response,
+                                   mcp_request_get_id_is_number (request));
+
+    node = mcp_message_to_json (MCP_MESSAGE (response));
+    out = json_to_string (node, FALSE);
+
+    g_assert_nonnull (strstr (out, "\"id\":\"7\""));
+}
+
+static void
+test_error_response_matches_the_id_type (void)
+{
+    /* An error reply has to match the request's id type just as a
+     * success reply does; a client that rejects the type rejects both. */
+    g_autoptr (McpErrorResponse) err = NULL;
+    g_autoptr (JsonNode) node = NULL;
+    g_autofree gchar *out = NULL;
+
+    err = mcp_error_response_new ("42", -32601, "method not found");
+    mcp_error_response_set_id_is_number (err, TRUE);
+
+    node = mcp_message_to_json (MCP_MESSAGE (err));
+    out = json_to_string (node, FALSE);
+
+    g_assert_nonnull (strstr (out, "\"id\":42"));
+    g_assert_null (strstr (out, "\"id\":\"42\""));
+}
+
+
 int
 main (int   argc,
       char *argv[])
@@ -740,6 +839,12 @@ main (int   argc,
     g_test_add_func ("/mcp/message/parse/wrong-version", test_message_parse_wrong_version);
 
     /* Round-trip tests */
+    g_test_add_func ("/mcp/message/id/numeric-stays-numeric",
+                     test_numeric_id_stays_numeric);
+    g_test_add_func ("/mcp/message/id/string-stays-string",
+                     test_string_id_stays_a_string);
+    g_test_add_func ("/mcp/message/id/error-matches-type",
+                     test_error_response_matches_the_id_type);
     g_test_add_func ("/mcp/message/roundtrip/request", test_request_roundtrip);
     g_test_add_func ("/mcp/message/roundtrip/response", test_response_roundtrip);
     g_test_add_func ("/mcp/message/roundtrip/error", test_error_roundtrip);

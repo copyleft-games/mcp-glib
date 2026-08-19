@@ -4,6 +4,7 @@
  * Copyright (C) 2025 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+#include <errno.h>
 #include "mcp-message.h"
 #include "mcp-enums.h"
 #include "mcp-error.h"
@@ -218,10 +219,57 @@ mcp_message_parse (const gchar  *json_str,
  *
  * Returns: (transfer full) (nullable): the id as a string, or %NULL if not present
  */
+/*
+ * JSON-RPC 2.0 requires a response id to be *identical* to the request's,
+ * type included, and a strict client checks it.  The id is modelled here
+ * as a string because that is what the whole public API exposes, so the
+ * originating JSON type has to be carried alongside it or a numeric id
+ * comes back quoted.  That is not cosmetic: a client that compares types
+ * rejects the handshake outright and the session ends up with no tools,
+ * while a lenient one never notices -- which is exactly how it survived.
+ *
+ * @is_number is optional and reports whether the wire form was a JSON
+ * number, so serialisation can put it back the way it arrived.
+ */
+/*
+ * Write an id back the way it arrived.  JSON-RPC 2.0 section 5 requires
+ * the response id to be identical to the request's, and a strict client
+ * compares the JSON type as well as the value -- so a numeric id echoed
+ * as a string fails the handshake with an error that reads absurdly,
+ * along the lines of "expected 0, got 0".
+ */
+static void
+mcp_message_add_id_value (JsonBuilder *builder,
+                          const gchar *id,
+                          gboolean     is_number)
+{
+    if (is_number && id != NULL)
+    {
+        gchar *end = NULL;
+        gint64 n;
+
+        errno = 0;
+        n = g_ascii_strtoll (id, &end, 10);
+        if (errno == 0 && end != NULL && *end == '\0' && end != id)
+        {
+            json_builder_add_int_value (builder, n);
+            return;
+        }
+    }
+
+    json_builder_add_string_value (builder, id);
+}
+
 static gchar *
-get_id_as_string (JsonObject *obj)
+get_id_as_string_full (JsonObject *obj, gboolean *is_number)
 {
     JsonNode *id_node;
+
+    if (is_number != NULL)
+    {
+        *is_number = FALSE;
+    }
+
 
     if (!json_object_has_member (obj, "id"))
     {
@@ -245,15 +293,29 @@ get_id_as_string (JsonObject *obj)
         }
         else if (value_type == G_TYPE_INT64)
         {
+            if (is_number != NULL)
+            {
+                *is_number = TRUE;
+            }
             return g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (id_node));
         }
         else if (value_type == G_TYPE_DOUBLE)
         {
+            if (is_number != NULL)
+            {
+                *is_number = TRUE;
+            }
             return g_strdup_printf ("%g", json_node_get_double (id_node));
         }
     }
 
     return NULL;
+}
+
+static gchar *
+get_id_as_string (JsonObject *obj)
+{
+    return get_id_as_string_full (obj, NULL);
 }
 
 /**
@@ -325,11 +387,12 @@ mcp_message_new_from_json (JsonNode  *node,
         /* Request */
         const gchar *method;
         g_autofree gchar *id = NULL;
+        gboolean id_is_number = FALSE;
         JsonNode *params_node;
         McpRequest *request;
 
         method = json_object_get_string_member (obj, "method");
-        id = get_id_as_string (obj);
+        id = get_id_as_string_full (obj, &id_is_number);
 
         params_node = json_object_has_member (obj, "params") ?
                       json_object_get_member (obj, "params") : NULL;
@@ -342,6 +405,8 @@ mcp_message_new_from_json (JsonNode  *node,
         {
             request = mcp_request_new (method, id);
         }
+
+        mcp_request_set_id_is_number (request, id_is_number);
 
         return MCP_MESSAGE (request);
     }
@@ -477,6 +542,7 @@ struct _McpRequest
     McpMessage parent_instance;
 
     gchar    *id;
+    gboolean  id_is_number;   /* the wire form, so a reply can match it */
     gchar    *method;
     JsonNode *params;
 };
@@ -583,7 +649,7 @@ mcp_request_to_json (McpMessage *message)
     json_builder_add_string_value (builder, MCP_JSONRPC_VERSION);
 
     json_builder_set_member_name (builder, "id");
-    json_builder_add_string_value (builder, self->id);
+    mcp_message_add_id_value (builder, self->id, self->id_is_number);
 
     json_builder_set_member_name (builder, "method");
     json_builder_add_string_value (builder, self->method);
@@ -737,6 +803,35 @@ mcp_request_get_id (McpRequest *self)
 }
 
 /**
+ * mcp_request_get_id_is_number:
+ * @self: an #McpRequest
+ *
+ * Returns: whether this request's id arrived as a JSON number
+ */
+gboolean
+mcp_request_get_id_is_number (McpRequest *self)
+{
+    g_return_val_if_fail (MCP_IS_REQUEST (self), FALSE);
+
+    return self->id_is_number;
+}
+
+/**
+ * mcp_request_set_id_is_number:
+ * @self: an #McpRequest
+ * @is_number: whether the id arrived as a JSON number
+ */
+void
+mcp_request_set_id_is_number (McpRequest *self, gboolean is_number)
+{
+    g_return_if_fail (MCP_IS_REQUEST (self));
+
+    self->id_is_number = !!is_number;
+}
+
+
+
+/**
  * mcp_request_get_method:
  * @self: an #McpRequest
  *
@@ -793,6 +888,7 @@ struct _McpResponse
     McpMessage parent_instance;
 
     gchar    *id;
+    gboolean  id_is_number;   /* see get_id_as_string_full */
     JsonNode *result;
 };
 
@@ -888,7 +984,7 @@ mcp_response_to_json (McpMessage *message)
     json_builder_add_string_value (builder, MCP_JSONRPC_VERSION);
 
     json_builder_set_member_name (builder, "id");
-    json_builder_add_string_value (builder, self->id);
+    mcp_message_add_id_value (builder, self->id, self->id_is_number);
 
     json_builder_set_member_name (builder, "result");
     if (self->result != NULL)
@@ -1001,6 +1097,23 @@ mcp_response_get_id (McpResponse *self)
 }
 
 /**
+ * mcp_response_set_id_is_number:
+ * @self: an #McpResponse
+ * @is_number: whether to serialise the id as a JSON number
+ *
+ * Answers a numeric request id in kind.  See
+ * mcp_request_get_id_is_number().
+ */
+void
+mcp_response_set_id_is_number (McpResponse *self, gboolean is_number)
+{
+    g_return_if_fail (MCP_IS_RESPONSE (self));
+
+    self->id_is_number = !!is_number;
+}
+
+
+/**
  * mcp_response_get_result:
  * @self: an #McpResponse
  *
@@ -1024,6 +1137,7 @@ struct _McpErrorResponse
     McpMessage parent_instance;
 
     gchar    *id;
+    gboolean  id_is_number;   /* see get_id_as_string_full */
     gint      code;
     gchar    *message;
     JsonNode *data;
@@ -1143,7 +1257,7 @@ mcp_error_response_to_json (McpMessage *message)
     json_builder_set_member_name (builder, "id");
     if (self->id != NULL)
     {
-        json_builder_add_string_value (builder, self->id);
+        mcp_message_add_id_value (builder, self->id, self->id_is_number);
     }
     else
     {
@@ -1358,6 +1472,24 @@ mcp_error_response_get_id (McpErrorResponse *self)
 
     return self->id;
 }
+
+/**
+ * mcp_error_response_set_id_is_number:
+ * @self: an #McpErrorResponse
+ * @is_number: whether to serialise the id as a JSON number
+ *
+ * Answers a numeric request id in kind.  An error reply has to match the
+ * request's id type just as a success reply does.
+ */
+void
+mcp_error_response_set_id_is_number (McpErrorResponse *self,
+                                     gboolean          is_number)
+{
+    g_return_if_fail (MCP_IS_ERROR_RESPONSE (self));
+
+    self->id_is_number = !!is_number;
+}
+
 
 /**
  * mcp_error_response_get_code:
