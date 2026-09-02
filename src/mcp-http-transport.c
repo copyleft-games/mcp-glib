@@ -48,6 +48,14 @@ struct _McpHttpTransport
     GCancellable *sse_cancellable;
     gboolean sse_reading;
 
+    /* The event being assembled, one line at a time.  These were three
+     * function-level `static GString *` in read_sse_line_cb(), which is
+     * process-global: two transports reading on the same main loop
+     * interleave their lines and hand each other's payloads over. */
+    GString *sse_event_type;
+    GString *sse_event_data;
+    GString *sse_event_id;
+
     /* State */
     McpTransportState state;
 
@@ -189,11 +197,32 @@ process_sse_event (McpHttpTransport *self,
         return;
     }
 
+    /*
+     * The SSE stream carries control events as well as messages.  The
+     * "endpoint" event -- the first thing every MCP SSE server sends --
+     * has a URL for its data, not JSON, so parsing it warns on every
+     * connection.  Only "message" (the SSE default when no event name is
+     * given) is a JSON-RPC frame.
+     */
+    if (event_type != NULL && g_strcmp0 (event_type, "message") != 0)
+    {
+        return;
+    }
+
     /* Parse JSON data */
     parser = json_parser_new ();
     if (!json_parser_load_from_data (parser, data, -1, &error))
     {
-        g_warning ("Failed to parse SSE data as JSON: %s", error->message);
+        g_autoptr(GError) parse_error = NULL;
+
+        /* Reported rather than logged: the text comes from the peer, and
+         * a g_warning per malformed event is a remote log-flooding
+         * lever -- fatal, at that, under any caller that makes warnings
+         * fatal. */
+        parse_error = g_error_new (MCP_ERROR, MCP_ERROR_PARSE_ERROR,
+                                   "Failed to parse SSE data as JSON: %s",
+                                   error->message);
+        mcp_transport_emit_error (MCP_TRANSPORT (self), parse_error);
         return;
     }
 
@@ -235,19 +264,10 @@ read_sse_line_cb (GObject      *source,
     McpHttpTransport *self = MCP_HTTP_TRANSPORT (user_data);
     g_autoptr(GError) error = NULL;
     g_autofree gchar *line = NULL;
+    GString *event_type = self->sse_event_type;
+    GString *event_data = self->sse_event_data;
+    GString *event_id = self->sse_event_id;
     gsize length;
-
-    /* Static buffers for building events */
-    static GString *event_type = NULL;
-    static GString *event_data = NULL;
-    static GString *event_id = NULL;
-
-    if (event_type == NULL)
-    {
-        event_type = g_string_new (NULL);
-        event_data = g_string_new (NULL);
-        event_id = g_string_new (NULL);
-    }
 
     line = g_data_input_stream_read_line_finish (G_DATA_INPUT_STREAM (source),
                                                   result, &length, &error);
@@ -415,6 +435,15 @@ sse_send_cb (GObject      *source,
     /* Store stream for reading */
     self->sse_stream = g_object_ref (stream);
     self->sse_data_stream = g_data_input_stream_new (stream);
+
+    /* SSE terminates a line with CRLF, LF or CR, and the blank separator
+     * line is how an event ends.  Left at the GDataInputStream default of
+     * LF, a CRLF server's separator arrives as "\r" -- length 1, not 0 --
+     * so the dispatch branch is never taken, no event ever fires, and the
+     * accumulated data grows for the life of the connection. */
+    g_data_input_stream_set_newline_type (self->sse_data_stream,
+                                          G_DATA_STREAM_NEWLINE_TYPE_ANY);
+
     self->sse_reading = TRUE;
 
     set_state (self, MCP_TRANSPORT_STATE_CONNECTED);
@@ -469,6 +498,11 @@ static void
 stop_sse_connection (McpHttpTransport *self)
 {
     self->sse_reading = FALSE;
+
+    /* Half an event is not the first half of the next connection's. */
+    g_string_truncate (self->sse_event_type, 0);
+    g_string_truncate (self->sse_event_data, 0);
+    g_string_truncate (self->sse_event_id, 0);
 
     if (self->sse_cancellable != NULL)
     {
@@ -602,11 +636,20 @@ mcp_http_transport_disconnect_finish (McpTransport  *transport,
     return g_task_propagate_boolean (G_TASK (result), error);
 }
 
+/*
+ * One POST in flight.  The SoupMessage used to be parked on the *shared*
+ * SoupSession with g_object_set_data_full ("current-message"), so a
+ * second POST replaced the first before the first had been answered:
+ * both callbacks then read the second message's status and body, and the
+ * first was unreffed while libsoup still held it.  For a room listing
+ * two requests overlap immediately.
+ */
 typedef struct
 {
     McpHttpTransport *transport;
     GTask *task;
     JsonNode *message;
+    SoupMessage *soup_message;
 } SendMessageData;
 
 static void
@@ -614,6 +657,7 @@ send_message_data_free (SendMessageData *data)
 {
     g_object_unref (data->transport);
     json_node_unref (data->message);
+    g_clear_object (&data->soup_message);
     g_slice_free (SendMessageData, data);
 }
 
@@ -626,11 +670,9 @@ post_send_cb (GObject      *source,
     g_autoptr(GError) error = NULL;
     g_autoptr(GBytes) response = NULL;
     guint status;
-    SoupMessage *message;
+    SoupMessage *message = data->soup_message;
 
     response = soup_session_send_and_read_finish (SOUP_SESSION (source), result, &error);
-
-    message = g_object_get_data (source, "current-message");
 
     if (response == NULL)
     {
@@ -744,14 +786,11 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     soup_message_set_request_body_from_bytes (soup_msg, "application/json", body);
     g_bytes_unref (body);
 
-    /* Store message for callback */
-    g_object_set_data_full (G_OBJECT (self->session), "current-message",
-                            soup_msg, g_object_unref);
-
     data = g_slice_new (SendMessageData);
     data->transport = g_object_ref (self);
     data->task = task;
     data->message = json_node_copy (message);
+    data->soup_message = soup_msg;   /* takes the reference */
 
     soup_session_send_and_read_async (self->session,
                                        soup_msg,
@@ -813,6 +852,10 @@ mcp_http_transport_finalize (GObject *object)
     g_free (self->post_endpoint);
     g_free (self->session_id);
     g_free (self->last_event_id);
+
+    g_string_free (self->sse_event_type, TRUE);
+    g_string_free (self->sse_event_data, TRUE);
+    g_string_free (self->sse_event_id, TRUE);
 
     G_OBJECT_CLASS (mcp_http_transport_parent_class)->finalize (object);
 }
@@ -970,6 +1013,9 @@ mcp_http_transport_init (McpHttpTransport *self)
     self->timeout_seconds = 30;
     self->reconnect_enabled = TRUE;
     self->reconnect_delay_ms = 3000;
+    self->sse_event_type = g_string_new (NULL);
+    self->sse_event_data = g_string_new (NULL);
+    self->sse_event_id = g_string_new (NULL);
 }
 
 /* Public API */

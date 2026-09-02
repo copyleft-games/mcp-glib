@@ -29,18 +29,6 @@ make_test_socket_path (const gchar *test_name)
 	                        (gint)getpid ());
 }
 
-/*
- * cleanup_socket:
- *
- * Removes a socket file if it exists.
- */
-static void
-cleanup_socket (const gchar *path)
-{
-	if (path != NULL)
-		unlink (path);
-}
-
 /* ============================================================================
  * Constructor Tests
  * ========================================================================== */

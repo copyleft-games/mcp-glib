@@ -8,6 +8,7 @@
 #include "mcp-message.h"
 #include "mcp-enums.h"
 #include "mcp-error.h"
+#include "mcp-json-util.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */
@@ -210,16 +211,6 @@ mcp_message_parse (const gchar  *json_str,
 }
 
 /*
- * get_id_as_string:
- * @obj: a #JsonObject
- *
- * Extracts the "id" member from a JSON object as a string.
- * JSON-RPC 2.0 allows id to be a string, number, or null.
- * This function handles all cases and returns a string representation.
- *
- * Returns: (transfer full) (nullable): the id as a string, or %NULL if not present
- */
-/*
  * JSON-RPC 2.0 requires a response id to be *identical* to the request's,
  * type included, and a strict client checks it.  The id is modelled here
  * as a string because that is what the whole public API exposes, so the
@@ -260,62 +251,102 @@ mcp_message_add_id_value (JsonBuilder *builder,
     json_builder_add_string_value (builder, id);
 }
 
-static gchar *
-get_id_as_string_full (JsonObject *obj, gboolean *is_number)
+/*
+ * IdForm:
+ *
+ * A single NULL return used to mean four different things here, and the
+ * callers spent it as one: "id": null, an id of a type JSON-RPC forbids,
+ * and no id at all all produced a NULL that went straight into
+ * mcp_request_new(), tripped its precondition, and came back out of
+ * mcp_message_new_from_json() as a NULL with @error never set -- which
+ * both message handlers then dereference.
+ */
+typedef enum
+{
+    ID_FORM_ABSENT,     /* no "id" member                                   */
+    ID_FORM_NULL,       /* "id": null -- legal only on an error response    */
+    ID_FORM_SCALAR,     /* a string or a number: the only usable form       */
+    ID_FORM_INVALID     /* an object, an array or a boolean                 */
+} IdForm;
+
+/*
+ * classify_id:
+ * @obj: a #JsonObject
+ *
+ * Extracts the "id" member from a JSON object as a string, and says which
+ * of the four shapes it had.  JSON-RPC 2.0 allows a string, a number or
+ * null; MCP forbids null on a request.
+ *
+ * Returns: the form the id took; @out_id is set only for ID_FORM_SCALAR
+ */
+static IdForm
+classify_id (JsonObject  *obj,
+             gchar      **out_id,
+             gboolean    *out_is_number)
 {
     JsonNode *id_node;
+    GType value_type;
 
-    if (is_number != NULL)
+    if (out_id != NULL)
     {
-        *is_number = FALSE;
+        *out_id = NULL;
     }
-
+    if (out_is_number != NULL)
+    {
+        *out_is_number = FALSE;
+    }
 
     if (!json_object_has_member (obj, "id"))
     {
-        return NULL;
+        return ID_FORM_ABSENT;
     }
 
     id_node = json_object_get_member (obj, "id");
     if (id_node == NULL || JSON_NODE_HOLDS_NULL (id_node))
     {
-        return NULL;
+        return ID_FORM_NULL;
     }
 
-    if (JSON_NODE_HOLDS_VALUE (id_node))
+    if (!JSON_NODE_HOLDS_VALUE (id_node))
     {
-        GType value_type;
-
-        value_type = json_node_get_value_type (id_node);
-        if (value_type == G_TYPE_STRING)
-        {
-            return g_strdup (json_node_get_string (id_node));
-        }
-        else if (value_type == G_TYPE_INT64)
-        {
-            if (is_number != NULL)
-            {
-                *is_number = TRUE;
-            }
-            return g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (id_node));
-        }
-        else if (value_type == G_TYPE_DOUBLE)
-        {
-            if (is_number != NULL)
-            {
-                *is_number = TRUE;
-            }
-            return g_strdup_printf ("%g", json_node_get_double (id_node));
-        }
+        return ID_FORM_INVALID;
     }
 
-    return NULL;
-}
+    value_type = json_node_get_value_type (id_node);
+    if (value_type == G_TYPE_STRING)
+    {
+        if (out_id != NULL)
+        {
+            *out_id = g_strdup (json_node_get_string (id_node));
+        }
+        return ID_FORM_SCALAR;
+    }
+    if (value_type == G_TYPE_INT64)
+    {
+        if (out_id != NULL)
+        {
+            *out_id = g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (id_node));
+        }
+        if (out_is_number != NULL)
+        {
+            *out_is_number = TRUE;
+        }
+        return ID_FORM_SCALAR;
+    }
+    if (value_type == G_TYPE_DOUBLE)
+    {
+        if (out_id != NULL)
+        {
+            *out_id = g_strdup_printf ("%g", json_node_get_double (id_node));
+        }
+        if (out_is_number != NULL)
+        {
+            *out_is_number = TRUE;
+        }
+        return ID_FORM_SCALAR;
+    }
 
-static gchar *
-get_id_as_string (JsonObject *obj)
-{
-    return get_id_as_string_full (obj, NULL);
+    return ID_FORM_INVALID;
 }
 
 /**
@@ -357,16 +388,16 @@ mcp_message_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Verify jsonrpc version */
-    if (!json_object_has_member (obj, "jsonrpc"))
+    jsonrpc = mcp_json_get_string (obj, "jsonrpc");
+    if (jsonrpc == NULL)
     {
         g_set_error (error,
                      MCP_ERROR,
                      MCP_ERROR_INVALID_REQUEST,
-                     "Missing 'jsonrpc' field");
+                     "Missing or non-string 'jsonrpc' field");
         return NULL;
     }
 
-    jsonrpc = json_object_get_string_member (obj, "jsonrpc");
     if (g_strcmp0 (jsonrpc, MCP_JSONRPC_VERSION) != 0)
     {
         g_set_error (error,
@@ -391,8 +422,26 @@ mcp_message_new_from_json (JsonNode  *node,
         JsonNode *params_node;
         McpRequest *request;
 
-        method = json_object_get_string_member (obj, "method");
-        id = get_id_as_string_full (obj, &id_is_number);
+        method = mcp_json_get_string (obj, "method");
+        if (method == NULL)
+        {
+            g_set_error (error,
+                         MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Request 'method' must be a string");
+            return NULL;
+        }
+
+        /* MCP forbids a null request id outright, and JSON-RPC allows
+         * only a string or a number for the rest. */
+        if (classify_id (obj, &id, &id_is_number) != ID_FORM_SCALAR)
+        {
+            g_set_error (error,
+                         MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Request 'id' must be a string or a number, and must not be null");
+            return NULL;
+        }
 
         params_node = json_object_has_member (obj, "params") ?
                       json_object_get_member (obj, "params") : NULL;
@@ -417,7 +466,16 @@ mcp_message_new_from_json (JsonNode  *node,
         JsonNode *params_node;
         McpNotification *notification;
 
-        method = json_object_get_string_member (obj, "method");
+        method = mcp_json_get_string (obj, "method");
+        if (method == NULL)
+        {
+            g_set_error (error,
+                         MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Notification 'method' must be a string");
+            return NULL;
+        }
+
         params_node = json_object_has_member (obj, "params") ?
                       json_object_get_member (obj, "params") : NULL;
 
@@ -439,7 +497,15 @@ mcp_message_new_from_json (JsonNode  *node,
         JsonNode *result_node;
         McpResponse *response;
 
-        id = get_id_as_string (obj);
+        if (classify_id (obj, &id, NULL) != ID_FORM_SCALAR)
+        {
+            g_set_error (error,
+                         MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Response 'id' must be a string or a number, and must not be null");
+            return NULL;
+        }
+
         result_node = json_object_get_member (obj, "result");
 
         response = mcp_response_new (id, json_node_copy (result_node));
@@ -456,12 +522,24 @@ mcp_message_new_from_json (JsonNode  *node,
         JsonNode *data_node;
         McpErrorResponse *err_response;
 
-        id = get_id_as_string (obj);
-        error_obj = json_object_get_object_member (obj, "error");
+        /* An error response is the one place JSON-RPC allows a null id --
+         * a parse error has no request to name -- so ID_FORM_NULL is fine
+         * here and leaves @id NULL, which mcp_error_response_new() takes. */
+        if (classify_id (obj, &id, NULL) == ID_FORM_INVALID)
+        {
+            g_set_error (error,
+                         MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Error response 'id' must be a string, a number or null");
+            return NULL;
+        }
+
+        error_obj = mcp_json_get_object (obj, "error");
+        message = error_obj != NULL ? mcp_json_get_string (error_obj, "message") : NULL;
 
         if (error_obj == NULL ||
             !json_object_has_member (error_obj, "code") ||
-            !json_object_has_member (error_obj, "message"))
+            message == NULL)
         {
             g_set_error (error,
                          MCP_ERROR,
@@ -470,8 +548,7 @@ mcp_message_new_from_json (JsonNode  *node,
             return NULL;
         }
 
-        code = (gint)json_object_get_int_member (error_obj, "code");
-        message = json_object_get_string_member (error_obj, "message");
+        code = (gint) mcp_json_get_int (error_obj, "code", 0);
         data_node = json_object_has_member (error_obj, "data") ?
                     json_object_get_member (error_obj, "data") : NULL;
 
@@ -496,11 +573,12 @@ mcp_message_new_from_json (JsonNode  *node,
         JsonNode *data_node;
         McpErrorResponse *err_response;
 
-        error_obj = json_object_get_object_member (obj, "error");
+        error_obj = mcp_json_get_object (obj, "error");
+        message = error_obj != NULL ? mcp_json_get_string (error_obj, "message") : NULL;
 
         if (error_obj == NULL ||
             !json_object_has_member (error_obj, "code") ||
-            !json_object_has_member (error_obj, "message"))
+            message == NULL)
         {
             g_set_error (error,
                          MCP_ERROR,
@@ -509,8 +587,7 @@ mcp_message_new_from_json (JsonNode  *node,
             return NULL;
         }
 
-        code = (gint)json_object_get_int_member (error_obj, "code");
-        message = json_object_get_string_member (error_obj, "message");
+        code = (gint) mcp_json_get_int (error_obj, "code", 0);
         data_node = json_object_has_member (error_obj, "data") ?
                     json_object_get_member (error_obj, "data") : NULL;
 
@@ -888,7 +965,7 @@ struct _McpResponse
     McpMessage parent_instance;
 
     gchar    *id;
-    gboolean  id_is_number;   /* see get_id_as_string_full */
+    gboolean  id_is_number;   /* see classify_id */
     JsonNode *result;
 };
 
@@ -1137,7 +1214,7 @@ struct _McpErrorResponse
     McpMessage parent_instance;
 
     gchar    *id;
-    gboolean  id_is_number;   /* see get_id_as_string_full */
+    gboolean  id_is_number;   /* see classify_id */
     gint      code;
     gchar    *message;
     JsonNode *data;

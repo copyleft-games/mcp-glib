@@ -483,3 +483,32 @@ See =examples/simple-client.c= for a complete working example that:
 - Calls a tool
 - Reads a resource
 - Gets a prompt
+
+** A failing handshake answers once
+
+=mcp_client_connect_async()='s =GTask= is reachable from two places at
+once: the client holds it as its connect task, and the session's
+pending-request table holds it as the task for the outbound =initialize=.
+A transport that fails reaches both --- =McpTransport::error= returns the
+first, and the state change that follows runs
+=mcp_session_cancel_all_pending_requests()= over the second.
+
+Returning a =GTask= twice is a GLib critical
+(=g_task_return_error: assertion '!task->ever_returned' failed=), and the
+second return is the one that decides the reason the caller is told. The
+client now removes the task from *both* places whichever path answers it,
+so =connect_finish()= is called exactly once with the reason that actually
+ended the handshake.
+
+** A hostile server must not be able to kill the client
+
+Everything a server sends is data. The client reads every member with a
+type check rather than a presence check, so a =serverInfo= whose =name= is
+a number, an =id= that is =null=, or a =method= that is an array is
+refused as =MCP_ERROR_INVALID_REQUEST= rather than reaching a precondition
+and coming back as a NULL with no =GError= for the handler to print.
+
+Transport errors are logged with =g_debug()=, not =g_warning()=: the text
+is the peer's, and a warning per error is a remote log-flooding lever ---
+a fatal one under any caller that makes warnings fatal. Connect to
+=McpTransport::error= to act on them.

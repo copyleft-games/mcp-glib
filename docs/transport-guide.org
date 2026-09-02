@@ -121,8 +121,39 @@ transport = mcp_stdio_transport_new_with_streams (input, output);
 Stdio transport uses newline-delimited JSON (NDJSON):
 
 - Each message is a complete JSON object on a single line
-- Messages are separated by =\n=
+- Messages are separated by =\n=; a =\r\n= peer is accepted too
 - No length prefix required
+
+*** Message Size Limit
+A peer that never sends a newline would otherwise make the transport
+accumulate for ever, so there is a cap on a single message:
+=MCP_STDIO_TRANSPORT_DEFAULT_MAX_LINE_BYTES=, 16 MiB.
+
+The cap is applied to the bytes held *while looking for* the newline,
+before the next read rather than after it -- which is the difference
+between refusing an over-long message and buffering it first.  This is
+also why the transport does its own framing rather than using
+=g_data_input_stream_read_line_async()=: that function doubles its own
+buffer until it finds a newline, whatever
+=g_buffered_input_stream_set_buffer_size()= was set to, so any limit on
+the line it returns is a check on memory already committed.
+
+A peer that exceeds the cap gets a =MCP_ERROR_INVALID_REQUEST= on the
+=McpTransport::error= signal, the accumulated bytes are dropped, and the
+transport moves to =MCP_TRANSPORT_STATE_ERROR=.
+
+#+begin_src C
+/* Raise it for a peer that legitimately sends very large resources. */
+mcp_stdio_transport_set_max_line_bytes (transport, 64 * 1024 * 1024);
+
+/* 0 removes the bound.  Only for a trusted peer: without it, a peer that
+   never sends a newline is a memory bomb. */
+mcp_stdio_transport_set_max_line_bytes (transport, 0);
+#+end_src
+
+| Property           | Type  | Default | Description                                   |
+|--------------------+-------+---------+-----------------------------------------------|
+| =max-line-bytes=   | guint64 | 16 MiB | Cap on one message, or 0 for none            |
 
 --------------
 
@@ -175,6 +206,19 @@ When implementing an HTTP-based MCP server (not using mcp-glib's server):
 - POST endpoint receives JSON-RPC messages
 - SSE endpoint streams responses and notifications
 - Include session ID in responses for client tracking
+- Send the SSE response with chunked transfer encoding; a response with a
+  =Content-Length= ends after its first event
+
+*** SSE Parsing
+- Lines may end =\r\n=, =\n= or =\r=; all three are accepted, and the
+  blank line between them is what ends an event
+- Only the =message= event (and the SSE default when no event name is
+  given) is parsed as a JSON-RPC frame.  The =endpoint= event carries a
+  URL, not JSON
+- A frame that does not parse is reported on =McpTransport::error=, not
+  logged: the text comes from the peer
+- Each transport accumulates its own event.  Two clients in one process
+  do not share a buffer
 
 --------------
 
@@ -266,7 +310,7 @@ mcp_http_server_transport_set_tls_certificate (transport, cert);
 | Property          | Type             | Default | Description                                  |
 |-------------------+------------------+---------+----------------------------------------------|
 | =port=            | guint            | 0       | Port to listen on (0 = auto-assign)          |
-| =host=            | gchar*           | NULL    | Host/address to bind (NULL = all interfaces) |
+| =host=            | gchar*           | NULL    | Address to bind (NULL = all interfaces)      |
 | =post-path=       | gchar*           | "/"     | Path for POST requests                       |
 | =sse-path=        | gchar*           | "/sse"  | Path for SSE connections                     |
 | =session-id=      | gchar*           | (auto)  | Current session ID (read-only)               |
@@ -283,11 +327,33 @@ mcp_server_set_transport (server, MCP_TRANSPORT (transport));
 mcp_server_start_async (server, NULL, on_started, NULL);
 #+end_src
 
+*** What =host= Binds
+=host= is the address the server listens on, and nothing else is
+reachable:
+
+- =NULL= or ="" -- every interface
+- ="localhost"= -- both loopback families
+- an address literal (="127.0.0.1"=, ="::1"=, ="192.168.1.10"=) -- that
+  address only
+- a name -- resolved, and the first address bound; a name that does not
+  resolve is an error rather than a reason to widen
+
+This used to be two cases: 127.0.0.1 and "localhost" bound loopback, and
+*everything else* bound all interfaces under a comment saying the handler
+would filter.  No filter was ever written, and =require-auth= defaults to
+=FALSE=, so naming an interface published the server on every network the
+machine was on.  The same applied to the WebSocket server transport.
+
 *** Protocol Details
 1. Client connects to SSE endpoint (GET =/sse=)
 2. Server generates session ID, sends it in =Mcp-Session-Id= header
 3. Client sends JSON-RPC messages via POST to =/= with =Mcp-Session-Id= header
 4. Server sends responses/notifications via SSE stream
+
+The SSE response is sent with =SOUP_ENCODING_CHUNKED=.  Without it libsoup
+takes the body length at handler return as the =Content-Length= and
+finishes the response after the endpoint event, so every later
+server-initiated message answers "No client connected".
 
 *** Example
 See =examples/http-server.c= for a complete example.

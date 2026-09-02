@@ -184,7 +184,17 @@ ALL_SRCS    := $(wildcard $(SRCDIR)/*.c)
 SRCS        := $(filter-out $(EXCLUDED_SRCS),$(ALL_SRCS))
 OBJS        := $(SRCS:$(SRCDIR)/%.c=$(BUILDDIR)/%.o)
 DEPS        := $(OBJS:.o=.d)
-HDRS        := $(wildcard $(SRCDIR)/*.h)
+
+# Internal helpers: `static inline` only, so they export nothing and are
+# not part of the API.  They are kept out of $(HDRS) so they are neither
+# installed into the public include directory nor scanned for
+# introspection -- g-ir-scanner's C parser does not understand
+# g_autoptr() in a declaration and reports a syntax error on it.
+PRIVATE_HDRS := $(SRCDIR)/mcp-json-util.h \
+                $(SRCDIR)/mcp-listen-util.h \
+                $(SRCDIR)/mcp-backoff-util.h
+
+HDRS        := $(filter-out $(PRIVATE_HDRS),$(wildcard $(SRCDIR)/*.h))
 
 #=============================================================================
 # Test Configuration

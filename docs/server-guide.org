@@ -425,3 +425,56 @@ another.
 
 Anything embedding an older mcp-glib keeps the old behaviour until it is
 rebuilt.
+
+** What a peer sends is data, not a promise
+
+Every field in an inbound frame arrives from somebody else, so its
+*presence* and its *type* are two different questions.
+
+=json_object_has_member()= answers the first.
+=json_object_get_string_member()= on a number answers NULL without a
+warning, and =json_object_get_object_member()= on a string logs a
+Json-CRITICAL and answers NULL. A caller that checked only presence spends
+that NULL: =g_hash_table_contains()= on a =g_str_hash= table dereferences
+it, so ={"method":"tools/call","params":{"name":123}}= was a remote
+segfault, and =clientInfo= with a non-string =name= reached
+=mcp_implementation_new()=' precondition.
+
+Handlers read every member through the type-checked accessors in
+=src/mcp-json-util.h=, and a member of the wrong type is answered with
+=MCP_ERROR_INVALID_PARAMS= rather than being read as absent-but-present.
+
+*** Ids and methods
+
+=mcp_message_new_from_json()= sets a =GError= on *every* NULL return,
+because both message handlers print =error->message= on that path. The
+cases that used to return NULL silently:
+
+- ="id": null= on a request --- legal JSON-RPC, forbidden by MCP, and the
+  spelling that reached =mcp_request_new()= with a NULL id
+- an id that is an object, an array or a boolean
+- a non-string =method=
+- a non-string =message= inside an =error= object
+
+An error response is the one place a null id is legal --- a parse error
+has no request to name --- and that still parses.
+
+*** An empty result is an empty object
+
+=json_node_new (JSON_NODE_OBJECT)= answers =JSON_NODE_HOLDS_OBJECT()= with
+TRUE and =json_node_get_object()= with NULL. It is not ={}=; it is an
+object-shaped hole, and serialising one walks into json-glib with a NULL
+object and dies. =ping=, =resources/subscribe=, =resources/unsubscribe=
+and =tasks/cancel= all built their replies that way, which no test could
+see because both mock transports pass =JsonNode=\s in memory and never
+serialise. Build an empty result with =mcp_json_new_empty_object()=.
+
+*** Cancellation
+
+=notifications/cancelled= names a request the *client* sent, in the
+client's id space. The server's own outbound requests (sampling, roots)
+are numbered in a counter of their own that also starts at 1, so looking
+the id up there let a client abort server work it knew nothing about.
+Inbound requests are dispatched and answered synchronously, so by the time
+a cancellation arrives there is nothing in flight to stop; a long-running
+call is a Task, and its cancellation is =tasks/cancel=.

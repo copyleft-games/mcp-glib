@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 struct _McpCompletionResult
 {
@@ -253,63 +254,43 @@ mcp_completion_result_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Get completion object */
-    if (!json_object_has_member (obj, "completion"))
-    {
-        g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Completion result missing 'completion' field");
-        return NULL;
-    }
-
-    completion_obj = json_object_get_object_member (obj, "completion");
+    completion_obj = mcp_json_get_object (obj, "completion");
     if (completion_obj == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "'completion' field must be an object");
+                     "Completion result missing 'completion' object");
         return NULL;
     }
 
     /* Get values array */
-    if (!json_object_has_member (completion_obj, "values"))
-    {
-        g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Completion result missing 'values' field");
-        return NULL;
-    }
-
-    values_array = json_object_get_array_member (completion_obj, "values");
+    values_array = mcp_json_get_array (completion_obj, "values");
     if (values_array == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "'values' field must be an array");
+                     "Completion result missing 'values' array");
         return NULL;
     }
 
     result = mcp_completion_result_new ();
 
-    /* Parse values */
+    /* Parse values.  json_array_get_string_element() logs and returns NULL
+     * for an element of another type, so a peer sending [1,1,1,...] would
+     * be a Json-CRITICAL per element. */
     len = json_array_get_length (values_array);
     for (i = 0; i < len; i++)
     {
-        const gchar *value;
+        JsonNode *element = json_array_get_element (values_array, i);
 
-        value = json_array_get_string_element (values_array, i);
-        if (value != NULL)
+        if (element != NULL && JSON_NODE_HOLDS_VALUE (element) &&
+            json_node_get_value_type (element) == G_TYPE_STRING)
         {
-            mcp_completion_result_add_value (result, value);
+            mcp_completion_result_add_value (result, json_node_get_string (element));
         }
     }
 
-    /* Optional: total */
-    if (json_object_has_member (completion_obj, "total"))
-    {
-        result->total = json_object_get_int_member (completion_obj, "total");
-    }
-
-    /* Optional: hasMore */
-    if (json_object_has_member (completion_obj, "hasMore"))
-    {
-        result->has_more = json_object_get_boolean_member (completion_obj, "hasMore");
-    }
+    /* Optional: total and hasMore */
+    result->total = mcp_json_get_int (completion_obj, "total", result->total);
+    result->has_more = mcp_json_get_boolean (completion_obj, "hasMore", result->has_more);
 
     return result;
 }

@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 struct _McpRoot
 {
@@ -200,20 +201,22 @@ mcp_root_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Required: uri */
-    if (!json_object_has_member (obj, "uri"))
+    uri = mcp_json_get_string (obj, "uri");
+    if (uri == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Root missing required 'uri' field");
+                     "Root missing or non-string 'uri' field");
         return NULL;
     }
-    uri = json_object_get_string_member (obj, "uri");
 
     root = mcp_root_new (uri);
 
     /* Optional: name */
-    if (json_object_has_member (obj, "name"))
     {
-        mcp_root_set_name (root, json_object_get_string_member (obj, "name"));
+        const gchar *name = mcp_json_get_string (obj, "name");
+
+        if (name != NULL)
+            mcp_root_set_name (root, name);
     }
 
     return root;

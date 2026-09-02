@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 /* ========================================================================== */
 /* McpPromptArgument - Boxed type                                             */
@@ -202,20 +203,17 @@ mcp_prompt_argument_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Required: name */
-    if (!json_object_has_member (obj, "name"))
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Prompt argument missing required 'name' field");
+                     "Prompt argument missing or non-string 'name' field");
         return NULL;
     }
-    name = json_object_get_string_member (obj, "name");
 
     /* Optional fields */
-    if (json_object_has_member (obj, "description"))
-        description = json_object_get_string_member (obj, "description");
-
-    if (json_object_has_member (obj, "required"))
-        required = json_object_get_boolean_member (obj, "required");
+    description = mcp_json_get_string (obj, "description");
+    required = mcp_json_get_boolean (obj, "required", FALSE);
 
     return mcp_prompt_argument_new (name, description, required);
 }
@@ -666,20 +664,17 @@ mcp_prompt_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Required: name */
-    if (!json_object_has_member (obj, "name"))
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Prompt definition missing required 'name' field");
+                     "Prompt definition missing or non-string 'name' field");
         return NULL;
     }
-    name = json_object_get_string_member (obj, "name");
 
     /* Optional fields */
-    if (json_object_has_member (obj, "title"))
-        title = json_object_get_string_member (obj, "title");
-
-    if (json_object_has_member (obj, "description"))
-        description = json_object_get_string_member (obj, "description");
+    title = mcp_json_get_string (obj, "title");
+    description = mcp_json_get_string (obj, "description");
 
     prompt = mcp_prompt_new (name, description);
 
@@ -687,10 +682,9 @@ mcp_prompt_new_from_json (JsonNode  *node,
         mcp_prompt_set_title (prompt, title);
 
     /* Parse arguments if present */
-    if (json_object_has_member (obj, "arguments"))
     {
-        JsonArray *args_array = json_object_get_array_member (obj, "arguments");
-        guint i, len = json_array_get_length (args_array);
+        JsonArray *args_array = mcp_json_get_array (obj, "arguments");
+        guint i, len = args_array != NULL ? json_array_get_length (args_array) : 0;
 
         for (i = 0; i < len; i++)
         {

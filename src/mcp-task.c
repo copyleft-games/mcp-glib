@@ -7,6 +7,7 @@
  * This implements the experimental Tasks API from MCP specification.
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 typedef struct
 {
@@ -626,71 +627,83 @@ mcp_task_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Required: taskId */
-    if (!json_object_has_member (obj, "taskId"))
+    task_id = mcp_json_get_string (obj, "taskId");
+    if (task_id == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Task definition missing required 'taskId' field");
+                     "Task definition missing or non-string 'taskId' field");
         return NULL;
     }
-    task_id = json_object_get_string_member (obj, "taskId");
 
     /* Required: status */
-    if (!json_object_has_member (obj, "status"))
+    status_str = mcp_json_get_string (obj, "status");
+    if (status_str == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Task definition missing required 'status' field");
+                     "Task definition missing or non-string 'status' field");
         return NULL;
     }
-    status_str = json_object_get_string_member (obj, "status");
     status = mcp_task_status_from_string (status_str);
 
     task = mcp_task_new (task_id, status);
 
     /* Optional: statusMessage */
-    if (json_object_has_member (obj, "statusMessage"))
-        mcp_task_set_status_message (task, json_object_get_string_member (obj, "statusMessage"));
+    {
+        const gchar *status_message = mcp_json_get_string (obj, "statusMessage");
+
+        if (status_message != NULL)
+            mcp_task_set_status_message (task, status_message);
+    }
 
     /* Required: createdAt */
-    if (json_object_has_member (obj, "createdAt"))
     {
-        const gchar *created_str = json_object_get_string_member (obj, "createdAt");
-        utc = g_time_zone_new_utc ();
-        dt = g_date_time_new_from_iso8601 (created_str, utc);
-        g_time_zone_unref (utc);
-        if (dt != NULL)
+        const gchar *created_str = mcp_json_get_string (obj, "createdAt");
+
+        if (created_str != NULL)
         {
-            mcp_task_set_created_at (task, dt);
-            g_date_time_unref (dt);
+            utc = g_time_zone_new_utc ();
+            dt = g_date_time_new_from_iso8601 (created_str, utc);
+            g_time_zone_unref (utc);
+            if (dt != NULL)
+            {
+                mcp_task_set_created_at (task, dt);
+                g_date_time_unref (dt);
+            }
         }
     }
 
     /* Required: lastUpdatedAt */
-    if (json_object_has_member (obj, "lastUpdatedAt"))
     {
-        const gchar *updated_str = json_object_get_string_member (obj, "lastUpdatedAt");
-        utc = g_time_zone_new_utc ();
-        dt = g_date_time_new_from_iso8601 (updated_str, utc);
-        g_time_zone_unref (utc);
-        if (dt != NULL)
+        const gchar *updated_str = mcp_json_get_string (obj, "lastUpdatedAt");
+
+        if (updated_str != NULL)
         {
-            mcp_task_set_last_updated_at (task, dt);
-            g_date_time_unref (dt);
+            utc = g_time_zone_new_utc ();
+            dt = g_date_time_new_from_iso8601 (updated_str, utc);
+            g_time_zone_unref (utc);
+            if (dt != NULL)
+            {
+                mcp_task_set_last_updated_at (task, dt);
+                g_date_time_unref (dt);
+            }
         }
     }
 
-    /* Optional: ttl (can be null) */
+    /* Optional: ttl.  JSON null is "no ttl", which is -1 here and is a
+     * different answer from a member of some other type. */
     if (json_object_has_member (obj, "ttl"))
     {
         JsonNode *ttl_node = json_object_get_member (obj, "ttl");
+
         if (json_node_is_null (ttl_node))
             mcp_task_set_ttl (task, -1);
         else
-            mcp_task_set_ttl (task, json_node_get_int (ttl_node));
+            mcp_task_set_ttl (task, mcp_json_get_int (obj, "ttl", -1));
     }
 
     /* Optional: pollInterval */
     if (json_object_has_member (obj, "pollInterval"))
-        mcp_task_set_poll_interval (task, json_object_get_int_member (obj, "pollInterval"));
+        mcp_task_set_poll_interval (task, mcp_json_get_int (obj, "pollInterval", 0));
 
     return task;
 }

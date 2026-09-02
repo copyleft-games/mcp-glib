@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 typedef struct
 {
@@ -751,27 +752,21 @@ mcp_tool_new_from_json (JsonNode  *node,
 
     obj = json_node_get_object (node);
 
-    /* Required: name */
-    if (!json_object_has_member (obj, "name"))
+    /* Required: name.  A present-but-not-a-string name reads as NULL from
+     * the typed reader and is a precondition inside mcp_tool_new(). */
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Tool definition missing required 'name' field");
+                     "Tool definition missing or non-string 'name' field");
         return NULL;
     }
-    name = json_object_get_string_member (obj, "name");
 
     /* Optional fields */
-    if (json_object_has_member (obj, "title"))
-        title = json_object_get_string_member (obj, "title");
-
-    if (json_object_has_member (obj, "description"))
-        description = json_object_get_string_member (obj, "description");
-
-    if (json_object_has_member (obj, "inputSchema"))
-        input_schema = json_object_get_member (obj, "inputSchema");
-
-    if (json_object_has_member (obj, "outputSchema"))
-        output_schema = json_object_get_member (obj, "outputSchema");
+    title = mcp_json_get_string (obj, "title");
+    description = mcp_json_get_string (obj, "description");
+    input_schema = json_object_get_member (obj, "inputSchema");
+    output_schema = json_object_get_member (obj, "outputSchema");
 
     tool = mcp_tool_new (name, description);
 
@@ -785,24 +780,25 @@ mcp_tool_new_from_json (JsonNode  *node,
         mcp_tool_set_output_schema (tool, output_schema);
 
     /* Parse annotations if present */
-    if (json_object_has_member (obj, "annotations"))
     {
-        JsonObject *annotations = json_object_get_object_member (obj, "annotations");
+        JsonObject *annotations = mcp_json_get_object (obj, "annotations");
 
-        if (json_object_has_member (annotations, "title"))
-            mcp_tool_set_title (tool, json_object_get_string_member (annotations, "title"));
+        if (annotations != NULL)
+        {
+            const gchar *annotation_title = mcp_json_get_string (annotations, "title");
 
-        if (json_object_has_member (annotations, "readOnlyHint"))
-            mcp_tool_set_read_only_hint (tool, json_object_get_boolean_member (annotations, "readOnlyHint"));
+            if (annotation_title != NULL)
+                mcp_tool_set_title (tool, annotation_title);
 
-        if (json_object_has_member (annotations, "destructiveHint"))
-            mcp_tool_set_destructive_hint (tool, json_object_get_boolean_member (annotations, "destructiveHint"));
-
-        if (json_object_has_member (annotations, "idempotentHint"))
-            mcp_tool_set_idempotent_hint (tool, json_object_get_boolean_member (annotations, "idempotentHint"));
-
-        if (json_object_has_member (annotations, "openWorldHint"))
-            mcp_tool_set_open_world_hint (tool, json_object_get_boolean_member (annotations, "openWorldHint"));
+            mcp_tool_set_read_only_hint (tool,
+                mcp_json_get_boolean (annotations, "readOnlyHint", FALSE));
+            mcp_tool_set_destructive_hint (tool,
+                mcp_json_get_boolean (annotations, "destructiveHint", FALSE));
+            mcp_tool_set_idempotent_hint (tool,
+                mcp_json_get_boolean (annotations, "idempotentHint", FALSE));
+            mcp_tool_set_open_world_hint (tool,
+                mcp_json_get_boolean (annotations, "openWorldHint", FALSE));
+        }
     }
 
     return tool;

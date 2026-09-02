@@ -9,6 +9,7 @@
 #include "mcp-error.h"
 #include "mcp-version.h"
 #include "mcp-task.h"
+#include "mcp-json-util.h"
 #undef MCP_COMPILATION
 
 /**
@@ -1407,9 +1408,9 @@ handle_initialize (McpServer  *self,
     }
 
     /* Parse client capabilities */
-    if (json_object_has_member (params, "capabilities"))
+    cap_node = mcp_json_get_member_of_type (params, "capabilities", JSON_NODE_OBJECT);
+    if (cap_node != NULL)
     {
-        cap_node = json_object_get_member (params, "capabilities");
         self->client_capabilities = mcp_client_capabilities_new_from_json (cap_node, &error);
         if (self->client_capabilities == NULL)
         {
@@ -1423,12 +1424,14 @@ handle_initialize (McpServer  *self,
     }
 
     /* Parse client info */
-    if (json_object_has_member (params, "clientInfo"))
     {
-        JsonNode *info_node = json_object_get_member (params, "clientInfo");
+        JsonNode *info_node = mcp_json_get_member_of_type (params, "clientInfo",
+                                                           JSON_NODE_OBJECT);
         McpImplementation *client_impl;
 
-        client_impl = mcp_implementation_new_from_json (info_node, NULL);
+        client_impl = info_node != NULL
+                      ? mcp_implementation_new_from_json (info_node, NULL)
+                      : NULL;
         if (client_impl != NULL)
         {
             mcp_session_set_remote_implementation (MCP_SESSION (self), client_impl);
@@ -1517,15 +1520,14 @@ handle_tools_call (McpServer  *self,
     g_autoptr(JsonNode) result = NULL;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "name"))
+    name = mcp_json_get_string (params, "name");
+    if (name == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing tool name", NULL);
+                             "Missing or non-string tool name", NULL);
         return;
     }
-
-    name = json_object_get_string_member (params, "name");
 
     if (!g_hash_table_contains (self->tools, name))
     {
@@ -1535,10 +1537,7 @@ handle_tools_call (McpServer  *self,
         return;
     }
 
-    if (json_object_has_member (params, "arguments"))
-    {
-        arguments = json_object_get_object_member (params, "arguments");
-    }
+    arguments = mcp_json_get_object (params, "arguments");
 
     g_signal_emit (self, signals[SIGNAL_TOOL_CALLED], 0, name, arguments);
 
@@ -1585,9 +1584,10 @@ handle_tools_call (McpServer  *self,
                 g_autoptr(JsonNode) tool_node = mcp_tool_result_to_json (tool_result);
                 JsonObject *tool_obj = json_node_get_object (tool_node);
 
-                if (json_object_has_member (tool_obj, "content"))
+                JsonArray *content = mcp_json_get_array (tool_obj, "content");
+
+                if (content != NULL)
                 {
-                    JsonArray *content = json_object_get_array_member (tool_obj, "content");
                     JsonNode *arr_node = json_node_new (JSON_NODE_ARRAY);
                     json_builder_set_member_name (builder, "content");
                     /* json_node_set_array refs the array, so don't add extra ref */
@@ -1598,7 +1598,8 @@ handle_tools_call (McpServer  *self,
                 if (json_object_has_member (tool_obj, "isError"))
                 {
                     json_builder_set_member_name (builder, "isError");
-                    json_builder_add_boolean_value (builder, json_object_get_boolean_member (tool_obj, "isError"));
+                    json_builder_add_boolean_value (builder,
+                                                    mcp_json_get_boolean (tool_obj, "isError", FALSE));
                 }
             }
 
@@ -1722,15 +1723,14 @@ handle_resources_read (McpServer  *self,
     GList *l;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "uri"))
+    uri = mcp_json_get_string (params, "uri");
+    if (uri == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing resource URI", NULL);
+                             "Missing or non-string resource URI", NULL);
         return;
     }
-
-    uri = json_object_get_string_member (params, "uri");
 
     g_signal_emit (self, signals[SIGNAL_RESOURCE_READ], 0, uri);
 
@@ -1802,19 +1802,18 @@ handle_resources_subscribe (McpServer  *self,
     const gchar *uri;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "uri"))
+    uri = mcp_json_get_string (params, "uri");
+    if (uri == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing resource URI", NULL);
+                             "Missing or non-string resource URI", NULL);
         return;
     }
 
-    uri = json_object_get_string_member (params, "uri");
-
     g_hash_table_insert (self->subscriptions, g_strdup (uri), GINT_TO_POINTER (TRUE));
 
-    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, mcp_json_new_empty_object ());
 }
 
 static void
@@ -1825,19 +1824,18 @@ handle_resources_unsubscribe (McpServer  *self,
     const gchar *uri;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "uri"))
+    uri = mcp_json_get_string (params, "uri");
+    if (uri == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing resource URI", NULL);
+                             "Missing or non-string resource URI", NULL);
         return;
     }
 
-    uri = json_object_get_string_member (params, "uri");
-
     g_hash_table_remove (self->subscriptions, uri);
 
-    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, mcp_json_new_empty_object ());
 }
 
 static void
@@ -1883,15 +1881,14 @@ handle_prompts_get (McpServer  *self,
     g_autoptr(JsonNode) result = NULL;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "name"))
+    name = mcp_json_get_string (params, "name");
+    if (name == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing prompt name", NULL);
+                             "Missing or non-string prompt name", NULL);
         return;
     }
-
-    name = json_object_get_string_member (params, "name");
 
     if (!g_hash_table_contains (self->prompts, name))
     {
@@ -1901,23 +1898,24 @@ handle_prompts_get (McpServer  *self,
         return;
     }
 
-    if (json_object_has_member (params, "arguments"))
+    args_obj = mcp_json_get_object (params, "arguments");
+    if (args_obj != NULL)
     {
-        args_obj = json_object_get_object_member (params, "arguments");
-        if (args_obj != NULL)
-        {
-            GList *members, *l;
+        GList *members, *l;
 
-            arguments = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
-            members = json_object_get_members (args_obj);
-            for (l = members; l != NULL; l = l->next)
-            {
-                const gchar *key = l->data;
-                const gchar *val = json_object_get_string_member (args_obj, key);
-                g_hash_table_insert (arguments, g_strdup (key), g_strdup (val));
-            }
-            g_list_free (members);
+        arguments = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+        members = json_object_get_members (args_obj);
+        for (l = members; l != NULL; l = l->next)
+        {
+            const gchar *key = l->data;
+
+            /* A non-string argument value becomes NULL rather than a
+             * Json-CRITICAL per member; the handler sees the key with no
+             * value, which is what an absent value has always meant. */
+            g_hash_table_insert (arguments, g_strdup (key),
+                                 g_strdup (mcp_json_get_string (args_obj, key)));
         }
+        g_list_free (members);
     }
 
     g_signal_emit (self, signals[SIGNAL_PROMPT_REQUESTED], 0, name, arguments);
@@ -1947,7 +1945,7 @@ static void
 handle_ping (McpServer  *self,
              McpRequest *request)
 {
-    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, mcp_json_new_empty_object ());
 }
 
 static void
@@ -1975,47 +1973,46 @@ handle_completion_complete (McpServer  *self,
     }
 
     /* Parse ref object */
-    if (!json_object_has_member (params, "ref"))
+    ref = mcp_json_get_object (params, "ref");
+    if (ref == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing ref", NULL);
+                             "Missing or non-object ref", NULL);
         return;
     }
 
-    ref = json_object_get_object_member (params, "ref");
-    if (ref == NULL || !json_object_has_member (ref, "type"))
+    ref_type = mcp_json_get_string (ref, "type");
+    if (ref_type == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Invalid ref", NULL);
+                             "Missing or non-string ref type", NULL);
         return;
     }
-
-    ref_type = json_object_get_string_member (ref, "type");
 
     /* Get name based on ref type */
     if (g_strcmp0 (ref_type, "ref/prompt") == 0)
     {
-        if (!json_object_has_member (ref, "name"))
+        ref_name = mcp_json_get_string (ref, "name");
+        if (ref_name == NULL)
         {
             send_error_response (self, request,
                                  MCP_ERROR_INVALID_PARAMS,
-                                 "Missing prompt name", NULL);
+                                 "Missing or non-string prompt name", NULL);
             return;
         }
-        ref_name = json_object_get_string_member (ref, "name");
     }
     else if (g_strcmp0 (ref_type, "ref/resource") == 0)
     {
-        if (!json_object_has_member (ref, "uri"))
+        ref_name = mcp_json_get_string (ref, "uri");
+        if (ref_name == NULL)
         {
             send_error_response (self, request,
                                  MCP_ERROR_INVALID_PARAMS,
-                                 "Missing resource uri", NULL);
+                                 "Missing or non-string resource uri", NULL);
             return;
         }
-        ref_name = json_object_get_string_member (ref, "uri");
     }
     else
     {
@@ -2026,28 +2023,25 @@ handle_completion_complete (McpServer  *self,
     }
 
     /* Parse argument object */
-    if (!json_object_has_member (params, "argument"))
+    argument = mcp_json_get_object (params, "argument");
+    if (argument == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing argument", NULL);
+                             "Missing or non-object argument", NULL);
         return;
     }
 
-    argument = json_object_get_object_member (params, "argument");
-    if (argument == NULL || !json_object_has_member (argument, "value"))
+    arg_value = mcp_json_get_string (argument, "value");
+    if (arg_value == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Invalid argument", NULL);
+                             "Missing or non-string argument value", NULL);
         return;
     }
 
-    if (json_object_has_member (argument, "name"))
-    {
-        arg_name = json_object_get_string_member (argument, "name");
-    }
-    arg_value = json_object_get_string_member (argument, "value");
+    arg_name = mcp_json_get_string (argument, "name");
 
     /* Call completion handler if set */
     handler = (McpCompletionHandler) self->completion_handler;
@@ -2180,26 +2174,29 @@ handle_notification (McpServer       *self,
         JsonNode *params_node;
         JsonObject *params;
         const gchar *request_id;
-        GTask *task;
 
+        /*
+         * requestId here names a request the *client* sent, in the
+         * client's id space.  mcp_session_take_pending_request() searches
+         * the requests *this server* sent, in a counter of its own that
+         * also starts at 1 -- so cancelling client request 1 used to abort
+         * the server's first sampling/createMessage, a remote lever on
+         * work the client never asked about.
+         *
+         * Every inbound request is dispatched and answered synchronously
+         * in handle_request(), so by the time a cancellation arrives there
+         * is nothing left in flight to stop.  A long-running call is a
+         * Task, and its cancellation is tasks/cancel.
+         */
         params_node = mcp_notification_get_params (notification);
         if (params_node != NULL && JSON_NODE_HOLDS_OBJECT (params_node))
         {
             params = json_node_get_object (params_node);
-            if (json_object_has_member (params, "requestId"))
+            request_id = mcp_json_get_string (params, "requestId");
+            if (request_id != NULL)
             {
-                request_id = json_object_get_string_member (params, "requestId");
-                if (request_id != NULL)
-                {
-                    /* Try to cancel pending server-initiated request */
-                    task = mcp_session_take_pending_request (MCP_SESSION (self), request_id);
-                    if (task != NULL)
-                    {
-                        g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_CANCELLED,
-                                                 "Request cancelled by client");
-                        g_object_unref (task);
-                    }
-                }
+                g_debug ("Client cancelled request %s, which has already been answered",
+                         request_id);
             }
         }
     }
@@ -2590,15 +2587,14 @@ handle_tasks_get (McpServer  *self,
     g_autoptr(JsonNode) result = NULL;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "taskId"))
+    task_id = mcp_json_get_string (params, "taskId");
+    if (task_id == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing taskId", NULL);
+                             "Missing or non-string taskId", NULL);
         return;
     }
-
-    task_id = json_object_get_string_member (params, "taskId");
     task = g_hash_table_lookup (self->tasks, task_id);
 
     if (task == NULL)
@@ -2624,15 +2620,14 @@ handle_tasks_result (McpServer  *self,
     g_autoptr(JsonNode) result_node = NULL;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "taskId"))
+    task_id = mcp_json_get_string (params, "taskId");
+    if (task_id == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing taskId", NULL);
+                             "Missing or non-string taskId", NULL);
         return;
     }
-
-    task_id = json_object_get_string_member (params, "taskId");
     task = g_hash_table_lookup (self->tasks, task_id);
 
     if (task == NULL)
@@ -2676,15 +2671,14 @@ handle_tasks_cancel (McpServer  *self,
     const gchar *task_id;
 
     params = get_request_params_object (request);
-    if (params == NULL || !json_object_has_member (params, "taskId"))
+    task_id = mcp_json_get_string (params, "taskId");
+    if (task_id == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing taskId", NULL);
+                             "Missing or non-string taskId", NULL);
         return;
     }
-
-    task_id = json_object_get_string_member (params, "taskId");
 
     if (!mcp_server_cancel_task (self, task_id))
     {
@@ -2694,7 +2688,7 @@ handle_tasks_cancel (McpServer  *self,
         return;
     }
 
-    send_response (self, request, json_node_new (JSON_NODE_OBJECT));
+    send_response (self, request, mcp_json_new_empty_object ());
 }
 
 static void
@@ -2938,15 +2932,15 @@ mcp_server_list_roots_finish (McpServer     *self,
     }
 
     obj = json_node_get_object (node);
-    if (!json_object_has_member (obj, "roots"))
+    roots_arr = mcp_json_get_array (obj, "roots");
+    if (roots_arr == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Missing 'roots' field");
+                     "Missing or non-array 'roots' field");
         json_node_unref (node);
         return NULL;
     }
 
-    roots_arr = json_object_get_array_member (obj, "roots");
     len = json_array_get_length (roots_arr);
 
     for (i = 0; i < len; i++)

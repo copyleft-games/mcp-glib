@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp-http-server-transport.h"
+#include "mcp-listen-util.h"
 #include "mcp-error.h"
 #undef MCP_COMPILATION
 
@@ -237,7 +238,15 @@ handle_sse_request (SoupServer        *server,
     soup_message_headers_replace (response_headers, "Mcp-Session-Id", self->session_id);
     soup_message_headers_replace (response_headers, "X-Accel-Buffering", "no");
 
-    /* Set status and enable chunked encoding */
+    /*
+     * Without this libsoup takes the body length at handler return as the
+     * Content-Length and finishes the response after the endpoint event,
+     * so every later server-initiated message answers "No client
+     * connected".  The comment here said "enable chunked encoding" and
+     * the call that does it was never written.
+     */
+    soup_message_headers_set_encoding (response_headers, SOUP_ENCODING_CHUNKED);
+
     soup_server_message_set_status (msg, SOUP_STATUS_OK, NULL);
 
     /* Store the message for sending events */
@@ -479,39 +488,11 @@ mcp_http_server_transport_connect_async (McpTransport        *transport,
     soup_server_add_handler (self->server, NULL, handle_request, self, NULL);
 
     /* Start listening */
-    if (self->host != NULL && self->host[0] != '\0')
+    if (!mcp_server_listen_on_host (self->server, self->host, self->port, &error))
     {
-        /* Listen on specific host - use listen_local for localhost */
-        if (g_strcmp0 (self->host, "127.0.0.1") == 0 ||
-            g_strcmp0 (self->host, "localhost") == 0)
-        {
-            if (!soup_server_listen_local (self->server, self->port, 0, &error))
-            {
-                g_task_return_error (task, g_steal_pointer (&error));
-                set_state (self, MCP_TRANSPORT_STATE_ERROR);
-                return;
-            }
-        }
-        else
-        {
-            /* For other hosts, use listen_all and filter in handler */
-            if (!soup_server_listen_all (self->server, self->port, 0, &error))
-            {
-                g_task_return_error (task, g_steal_pointer (&error));
-                set_state (self, MCP_TRANSPORT_STATE_ERROR);
-                return;
-            }
-        }
-    }
-    else
-    {
-        /* Listen on all interfaces */
-        if (!soup_server_listen_all (self->server, self->port, 0, &error))
-        {
-            g_task_return_error (task, g_steal_pointer (&error));
-            set_state (self, MCP_TRANSPORT_STATE_ERROR);
-            return;
-        }
+        g_task_return_error (task, g_steal_pointer (&error));
+        set_state (self, MCP_TRANSPORT_STATE_ERROR);
+        return;
     }
 
     /* Get the actual port (for port 0 auto-assign case) */

@@ -203,6 +203,19 @@ make test
 | `test-server` | Server with mock transport |
 | `test-client` | Client with mock transport |
 | `test-integration` | End-to-end server+client |
+| `test-server-wire` | Server replies that are actually serialised, and inbound members of the wrong JSON type |
+| `test-client-handshake` | The connect task on a failing handshake |
+| `test-stdio-transport` | Framing, the line cap, and teardown with I/O in flight |
+| `test-http-sse` | HTTP/WebSocket: SSE streaming, per-instance event state, overlapping POSTs, host binding |
+| `test-backoff` | Reconnect backoff arithmetic |
+
+**No test that passes `JsonNode`s between a mock server and a mock client
+can see a reply that will not serialise**: `json_node_new
+(JSON_NODE_OBJECT)` answers `JSON_NODE_HOLDS_OBJECT()` with TRUE, so
+`/integration/ping` was green against a `ping` that killed the process the
+moment a real transport wrote it out. `test-server-wire` runs every
+outbound frame through `JsonGenerator`, which is what a real transport
+does.
 
 ## Example Programs
 

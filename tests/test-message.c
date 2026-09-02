@@ -799,6 +799,115 @@ test_error_response_matches_the_id_type (void)
 }
 
 
+/*
+ * A NULL return from mcp_message_new_from_json() must always carry a
+ * GError: both McpServer::on_message_received() and
+ * McpClient::on_message_received() print error->message on that path, so
+ * a NULL return with no error set is a segfault in whichever direction
+ * the frame arrived from.  Every case below used to reach
+ * mcp_request_new()/mcp_response_new()/mcp_notification_new() with a NULL
+ * argument, trip a precondition, and return NULL silently.
+ */
+static void
+test_message_parse_null_id_request (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": null, \"method\": \"ping\"}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+static void
+test_message_parse_object_id_request (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": {\"a\": 1}, \"method\": \"ping\"}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+static void
+test_message_parse_non_string_method (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": 1, \"method\": 7}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+static void
+test_message_parse_non_string_notification_method (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"method\": [\"a\"]}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+static void
+test_message_parse_null_id_response (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": null, \"result\": {}}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+static void
+test_message_parse_non_string_error_message (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": 1,"
+        " \"error\": {\"code\": -1, \"message\": {\"nope\": 1}}}", &error);
+
+    g_assert_null (message);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST);
+}
+
+/*
+ * An error response is the one place JSON-RPC allows a null id: a parse
+ * error has no request to name.  That must keep working.
+ */
+static void
+test_message_parse_null_id_error_response (void)
+{
+    g_autoptr(McpMessage) message = NULL;
+    g_autoptr(GError) error = NULL;
+
+    message = mcp_message_parse (
+        "{\"jsonrpc\": \"2.0\", \"id\": null,"
+        " \"error\": {\"code\": -32700, \"message\": \"Parse error\"}}", &error);
+
+    g_assert_no_error (error);
+    g_assert_nonnull (message);
+    g_assert_cmpint (mcp_message_get_message_type (message), ==, MCP_MESSAGE_TYPE_ERROR);
+    g_assert_null (mcp_error_response_get_id (MCP_ERROR_RESPONSE (message)));
+}
+
+
 int
 main (int   argc,
       char *argv[])
@@ -837,6 +946,22 @@ main (int   argc,
     g_test_add_func ("/mcp/message/parse/invalid-json", test_message_parse_invalid_json);
     g_test_add_func ("/mcp/message/parse/missing-jsonrpc", test_message_parse_missing_jsonrpc);
     g_test_add_func ("/mcp/message/parse/wrong-version", test_message_parse_wrong_version);
+
+    /* A NULL return must always carry a GError */
+    g_test_add_func ("/mcp/message/parse/null-id-request",
+                     test_message_parse_null_id_request);
+    g_test_add_func ("/mcp/message/parse/object-id-request",
+                     test_message_parse_object_id_request);
+    g_test_add_func ("/mcp/message/parse/non-string-method",
+                     test_message_parse_non_string_method);
+    g_test_add_func ("/mcp/message/parse/non-string-notification-method",
+                     test_message_parse_non_string_notification_method);
+    g_test_add_func ("/mcp/message/parse/null-id-response",
+                     test_message_parse_null_id_response);
+    g_test_add_func ("/mcp/message/parse/non-string-error-message",
+                     test_message_parse_non_string_error_message);
+    g_test_add_func ("/mcp/message/parse/null-id-error-response",
+                     test_message_parse_null_id_error_response);
 
     /* Round-trip tests */
     g_test_add_func ("/mcp/message/id/numeric-stays-numeric",

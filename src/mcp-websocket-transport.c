@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp-websocket-transport.h"
+#include "mcp-backoff-util.h"
 #include "mcp-error.h"
 #undef MCP_COMPILATION
 
@@ -437,14 +438,16 @@ schedule_reconnect (McpWebSocketTransport *self)
 
     set_state (self, MCP_TRANSPORT_STATE_CONNECTING);
 
-    /* Exponential backoff: delay * 2^attempts, capped at 30 seconds */
-    guint delay = self->reconnect_delay_ms * (1 << (self->reconnect_attempts - 1));
-    if (delay > 30000)
+    /* Exponential backoff, capped at 30 seconds.  See
+     * mcp_backoff_delay_ms() for why the shift is bounded and not just
+     * the product. */
     {
-        delay = 30000;
-    }
+        guint delay = mcp_backoff_delay_ms (self->reconnect_delay_ms,
+                                            self->reconnect_attempts,
+                                            30000);
 
-    self->reconnect_timeout_id = g_timeout_add (delay, reconnect_timeout_cb, self);
+        self->reconnect_timeout_id = g_timeout_add (delay, reconnect_timeout_cb, self);
+    }
 }
 
 /* McpTransport interface implementation */

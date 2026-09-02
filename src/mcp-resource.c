@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 /* ========================================================================== */
 /* McpResource                                                                */
@@ -536,38 +537,43 @@ mcp_resource_new_from_json (JsonNode  *node,
 
     obj = json_node_get_object (node);
 
-    /* Required: uri */
-    if (!json_object_has_member (obj, "uri"))
+    /* Required: uri and name.  Present-but-not-a-string reads as NULL from
+     * the typed reader and is a precondition inside mcp_resource_new(). */
+    uri = mcp_json_get_string (obj, "uri");
+    if (uri == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Resource definition missing required 'uri' field");
+                     "Resource definition missing or non-string 'uri' field");
         return NULL;
     }
-    uri = json_object_get_string_member (obj, "uri");
 
-    /* Required: name */
-    if (!json_object_has_member (obj, "name"))
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Resource definition missing required 'name' field");
+                     "Resource definition missing or non-string 'name' field");
         return NULL;
     }
-    name = json_object_get_string_member (obj, "name");
 
     resource = mcp_resource_new (uri, name);
 
     /* Optional fields */
-    if (json_object_has_member (obj, "title"))
-        mcp_resource_set_title (resource, json_object_get_string_member (obj, "title"));
+    {
+        const gchar *title = mcp_json_get_string (obj, "title");
+        const gchar *description = mcp_json_get_string (obj, "description");
+        const gchar *mime_type = mcp_json_get_string (obj, "mimeType");
 
-    if (json_object_has_member (obj, "description"))
-        mcp_resource_set_description (resource, json_object_get_string_member (obj, "description"));
+        if (title != NULL)
+            mcp_resource_set_title (resource, title);
 
-    if (json_object_has_member (obj, "mimeType"))
-        mcp_resource_set_mime_type (resource, json_object_get_string_member (obj, "mimeType"));
+        if (description != NULL)
+            mcp_resource_set_description (resource, description);
 
-    if (json_object_has_member (obj, "size"))
-        mcp_resource_set_size (resource, json_object_get_int_member (obj, "size"));
+        if (mime_type != NULL)
+            mcp_resource_set_mime_type (resource, mime_type);
+
+        mcp_resource_set_size (resource, mcp_json_get_int (obj, "size", 0));
+    }
 
     return resource;
 }
@@ -1038,35 +1044,42 @@ mcp_resource_template_new_from_json (JsonNode  *node,
 
     obj = json_node_get_object (node);
 
-    /* Required: uriTemplate */
-    if (!json_object_has_member (obj, "uriTemplate"))
+    /* Required: uriTemplate and name */
+    uri_template = mcp_json_get_string (obj, "uriTemplate");
+    if (uri_template == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Resource template definition missing required 'uriTemplate' field");
+                     "Resource template definition missing or non-string "
+                     "'uriTemplate' field");
         return NULL;
     }
-    uri_template = json_object_get_string_member (obj, "uriTemplate");
 
-    /* Required: name */
-    if (!json_object_has_member (obj, "name"))
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Resource template definition missing required 'name' field");
+                     "Resource template definition missing or non-string "
+                     "'name' field");
         return NULL;
     }
-    name = json_object_get_string_member (obj, "name");
 
     tmpl = mcp_resource_template_new (uri_template, name);
 
     /* Optional fields */
-    if (json_object_has_member (obj, "title"))
-        mcp_resource_template_set_title (tmpl, json_object_get_string_member (obj, "title"));
+    {
+        const gchar *title = mcp_json_get_string (obj, "title");
+        const gchar *description = mcp_json_get_string (obj, "description");
+        const gchar *mime_type = mcp_json_get_string (obj, "mimeType");
 
-    if (json_object_has_member (obj, "description"))
-        mcp_resource_template_set_description (tmpl, json_object_get_string_member (obj, "description"));
+        if (title != NULL)
+            mcp_resource_template_set_title (tmpl, title);
 
-    if (json_object_has_member (obj, "mimeType"))
-        mcp_resource_template_set_mime_type (tmpl, json_object_get_string_member (obj, "mimeType"));
+        if (description != NULL)
+            mcp_resource_template_set_description (tmpl, description);
+
+        if (mime_type != NULL)
+            mcp_resource_template_set_mime_type (tmpl, mime_type);
+    }
 
     return tmpl;
 }

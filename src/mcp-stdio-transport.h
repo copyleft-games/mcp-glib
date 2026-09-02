@@ -23,6 +23,20 @@
 
 G_BEGIN_DECLS
 
+/**
+ * MCP_STDIO_TRANSPORT_DEFAULT_MAX_LINE_BYTES:
+ *
+ * The default cap on a single newline-delimited message, in bytes.
+ *
+ * A peer that never sends a newline would otherwise make the transport
+ * accumulate for ever, so the bound is on what is held while looking for
+ * the terminator, not on the message that eventually arrives.  The
+ * default is generous because an MCP tool result may legitimately carry a
+ * base64 image or resource; raise it with
+ * mcp_stdio_transport_set_max_line_bytes() where that is not enough.
+ */
+#define MCP_STDIO_TRANSPORT_DEFAULT_MAX_LINE_BYTES (16 * 1024 * 1024)
+
 #define MCP_TYPE_STDIO_TRANSPORT (mcp_stdio_transport_get_type ())
 
 G_DECLARE_FINAL_TYPE (McpStdioTransport, mcp_stdio_transport, MCP, STDIO_TRANSPORT, GObject)
@@ -107,6 +121,34 @@ GInputStream *mcp_stdio_transport_get_input_stream (McpStdioTransport *self);
  * Returns: (transfer none): the #GOutputStream
  */
 GOutputStream *mcp_stdio_transport_get_output_stream (McpStdioTransport *self);
+
+/**
+ * mcp_stdio_transport_get_max_line_bytes:
+ * @self: an #McpStdioTransport
+ *
+ * Gets the cap on a single newline-delimited message.
+ *
+ * Returns: the cap in bytes, or 0 if the transport accumulates without a
+ *   bound
+ */
+gsize mcp_stdio_transport_get_max_line_bytes (McpStdioTransport *self);
+
+/**
+ * mcp_stdio_transport_set_max_line_bytes:
+ * @self: an #McpStdioTransport
+ * @max_line_bytes: the cap in bytes, or 0 to remove it
+ *
+ * Sets the cap on a single newline-delimited message.  A peer that sends
+ * more than this without a newline gets a
+ * %MCP_ERROR_INVALID_REQUEST on the #McpTransport::error signal and the
+ * transport moves to %MCP_TRANSPORT_STATE_ERROR; the bytes are dropped
+ * rather than kept.
+ *
+ * Passing 0 removes the bound.  Only do that when the peer is trusted:
+ * without it a peer that never sends a newline is a memory bomb.
+ */
+void mcp_stdio_transport_set_max_line_bytes (McpStdioTransport *self,
+                                             gsize              max_line_bytes);
 
 G_END_DECLS
 

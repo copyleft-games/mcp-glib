@@ -9,6 +9,7 @@
 #include "mcp-error.h"
 #include "mcp-version.h"
 #include "mcp-task.h"
+#include "mcp-json-util.h"
 #undef MCP_COMPILATION
 
 /**
@@ -39,6 +40,16 @@ struct _McpClient
 
     /* Pending connect task */
     GTask *connect_task;
+
+    /*
+     * The connect task is also the pending request for the outbound
+     * initialize, so it is reachable from two places at once: this field
+     * and the session's pending-request table.  The id is what lets a
+     * path that answers one take it out of the other -- returning a GTask
+     * twice is a GLib critical, and the second return decides the reason
+     * the caller is told.
+     */
+    gchar *connect_request_id;
 
     /* Roots management */
     GList *roots;  /* List of McpRoot* */
@@ -121,6 +132,7 @@ mcp_client_dispose (GObject *object)
     g_clear_object (&self->capabilities);
     g_clear_object (&self->server_capabilities);
     g_clear_object (&self->connect_task);
+    g_clear_pointer (&self->connect_request_id, g_free);
 
     G_OBJECT_CLASS (mcp_client_parent_class)->dispose (object);
 }
@@ -454,6 +466,9 @@ send_initialize_request (McpClient *self)
     id = mcp_session_generate_request_id (MCP_SESSION (self));
     request = mcp_request_new ("initialize", id);
 
+    g_free (self->connect_request_id);
+    self->connect_request_id = g_strdup (id);
+
     impl = mcp_session_get_local_implementation (MCP_SESSION (self));
 
     builder = json_builder_new ();
@@ -482,6 +497,35 @@ send_initialize_request (McpClient *self)
     send_request (self, request, self->connect_task);
 }
 
+/*
+ * take_connect_task:
+ *
+ * The connect task, removed from *both* places that reference it.
+ *
+ * Returns: (transfer full) (nullable): the task, or %NULL if it has
+ *   already been answered
+ */
+static GTask *
+take_connect_task (McpClient *self)
+{
+    GTask *task;
+
+    if (self->connect_request_id != NULL)
+    {
+        g_autoptr(GTask) pending =
+            mcp_session_take_pending_request (MCP_SESSION (self),
+                                              self->connect_request_id);
+
+        (void) pending;
+        g_clear_pointer (&self->connect_request_id, g_free);
+    }
+
+    task = self->connect_task;
+    self->connect_task = NULL;
+
+    return task;
+}
+
 static void
 transport_connect_cb (GObject      *source,
                       GAsyncResult *result,
@@ -492,10 +536,11 @@ transport_connect_cb (GObject      *source,
 
     if (!mcp_transport_connect_finish (MCP_TRANSPORT (source), result, &error))
     {
-        if (self->connect_task != NULL)
+        g_autoptr(GTask) task = take_connect_task (self);
+
+        if (task != NULL)
         {
-            g_task_return_error (self->connect_task, error);
-            g_clear_object (&self->connect_task);
+            g_task_return_error (task, error);
         }
         else
         {
@@ -1269,12 +1314,20 @@ on_transport_error (McpTransport *transport,
 {
     McpClient *self = MCP_CLIENT (user_data);
 
-    g_warning ("Transport error: %s", error->message);
+    /* Logged, not warned: the text is the peer's, so a g_warning per
+     * transport error is a remote log-flooding lever -- and a fatal one
+     * for any caller that makes warnings fatal.  Anybody who wants to act
+     * on this connects to McpTransport::error, which is what got us
+     * here. */
+    g_debug ("Transport error: %s", error->message);
 
-    if (self->connect_task != NULL)
     {
-        g_task_return_error (self->connect_task, g_error_copy (error));
-        g_clear_object (&self->connect_task);
+        g_autoptr(GTask) task = take_connect_task (self);
+
+        if (task != NULL)
+        {
+            g_task_return_error (task, g_error_copy (error));
+        }
     }
 }
 
@@ -1301,10 +1354,13 @@ on_initialized_notification_sent (GObject      *source,
     }
 
     /* Now that the send is complete, we can safely complete the connect task */
-    if (self->connect_task != NULL)
     {
-        g_task_return_boolean (self->connect_task, TRUE);
-        g_clear_object (&self->connect_task);
+        g_autoptr(GTask) task = take_connect_task (self);
+
+        if (task != NULL)
+        {
+            g_task_return_boolean (task, TRUE);
+        }
     }
 }
 
@@ -1319,11 +1375,12 @@ handle_initialize_response (McpClient   *self,
     result = mcp_response_get_result (response);
     if (!JSON_NODE_HOLDS_OBJECT (result))
     {
-        if (self->connect_task != NULL)
+        g_autoptr(GTask) task = take_connect_task (self);
+
+        if (task != NULL)
         {
-            g_task_return_new_error (self->connect_task, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
+            g_task_return_new_error (task, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
                                      "Invalid initialize response");
-            g_clear_object (&self->connect_task);
         }
         return;
     }
@@ -1331,25 +1388,33 @@ handle_initialize_response (McpClient   *self,
     obj = json_node_get_object (result);
 
     /* Parse server capabilities */
-    if (json_object_has_member (obj, "capabilities"))
     {
-        JsonNode *caps_node = json_object_get_member (obj, "capabilities");
-        self->server_capabilities = mcp_server_capabilities_new_from_json (caps_node, &error);
-        if (self->server_capabilities == NULL)
+        JsonNode *caps_node = mcp_json_get_member_of_type (obj, "capabilities",
+                                                           JSON_NODE_OBJECT);
+
+        if (caps_node != NULL)
         {
-            g_warning ("Failed to parse server capabilities: %s", error->message);
-            self->server_capabilities = mcp_server_capabilities_new ();
+            self->server_capabilities =
+                mcp_server_capabilities_new_from_json (caps_node, &error);
+            if (self->server_capabilities == NULL)
+            {
+                g_debug ("Failed to parse server capabilities: %s", error->message);
+                self->server_capabilities = mcp_server_capabilities_new ();
+            }
+            g_object_notify_by_pspec (G_OBJECT (self),
+                                      properties[PROP_SERVER_CAPABILITIES]);
         }
-        g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SERVER_CAPABILITIES]);
     }
 
     /* Parse server info */
-    if (json_object_has_member (obj, "serverInfo"))
     {
-        JsonNode *info_node = json_object_get_member (obj, "serverInfo");
+        JsonNode *info_node = mcp_json_get_member_of_type (obj, "serverInfo",
+                                                           JSON_NODE_OBJECT);
         McpImplementation *server_impl;
 
-        server_impl = mcp_implementation_new_from_json (info_node, NULL);
+        server_impl = info_node != NULL
+                      ? mcp_implementation_new_from_json (info_node, NULL)
+                      : NULL;
         if (server_impl != NULL)
         {
             mcp_session_set_remote_implementation (MCP_SESSION (self), server_impl);
@@ -1358,17 +1423,25 @@ handle_initialize_response (McpClient   *self,
     }
 
     /* Parse instructions */
-    if (json_object_has_member (obj, "instructions"))
     {
-        self->server_instructions = g_strdup (json_object_get_string_member (obj, "instructions"));
-        g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_SERVER_INSTRUCTIONS]);
+        const gchar *instructions = mcp_json_get_string (obj, "instructions");
+
+        if (instructions != NULL)
+        {
+            self->server_instructions = g_strdup (instructions);
+            g_object_notify_by_pspec (G_OBJECT (self),
+                                      properties[PROP_SERVER_INSTRUCTIONS]);
+        }
     }
 
     /* Parse protocol version */
-    if (json_object_has_member (obj, "protocolVersion"))
     {
-        const gchar *version = json_object_get_string_member (obj, "protocolVersion");
-        mcp_session_set_protocol_version (MCP_SESSION (self), version);
+        const gchar *version = mcp_json_get_string (obj, "protocolVersion");
+
+        if (version != NULL)
+        {
+            mcp_session_set_protocol_version (MCP_SESSION (self), version);
+        }
     }
 
     /* Now ready */
@@ -1404,12 +1477,12 @@ parse_tools_response (JsonNode *result)
     }
 
     obj = json_node_get_object (result);
-    if (!json_object_has_member (obj, "tools"))
+    tools_arr = mcp_json_get_array (obj, "tools");
+    if (tools_arr == NULL)
     {
         return NULL;
     }
 
-    tools_arr = json_object_get_array_member (obj, "tools");
     len = json_array_get_length (tools_arr);
 
     for (i = 0; i < len; i++)
@@ -1441,33 +1514,34 @@ parse_tool_call_response (JsonNode *result)
 
     obj = json_node_get_object (result);
 
-    if (json_object_has_member (obj, "isError"))
-    {
-        is_error = json_object_get_boolean_member (obj, "isError");
-    }
+    is_error = mcp_json_get_boolean (obj, "isError", FALSE);
 
     tool_result = mcp_tool_result_new (is_error);
 
-    if (json_object_has_member (obj, "content"))
+    content = mcp_json_get_array (obj, "content");
+    if (content != NULL)
     {
-        content = json_object_get_array_member (obj, "content");
         len = json_array_get_length (content);
 
         for (i = 0; i < len; i++)
         {
-            JsonObject *item = json_array_get_object_element (content, i);
-            const gchar *type = json_object_get_string_member (item, "type");
+            JsonObject *item = mcp_json_array_get_object (content, i);
+            const gchar *type = mcp_json_get_string (item, "type");
 
             if (g_strcmp0 (type, "text") == 0)
             {
-                const gchar *text = json_object_get_string_member (item, "text");
-                mcp_tool_result_add_text (tool_result, text);
+                const gchar *text = mcp_json_get_string (item, "text");
+
+                if (text != NULL)
+                    mcp_tool_result_add_text (tool_result, text);
             }
             else if (g_strcmp0 (type, "image") == 0)
             {
-                const gchar *data = json_object_get_string_member (item, "data");
-                const gchar *mime_type = json_object_get_string_member (item, "mimeType");
-                mcp_tool_result_add_image (tool_result, data, mime_type);
+                const gchar *data = mcp_json_get_string (item, "data");
+                const gchar *mime_type = mcp_json_get_string (item, "mimeType");
+
+                if (data != NULL && mime_type != NULL)
+                    mcp_tool_result_add_image (tool_result, data, mime_type);
             }
         }
     }
@@ -1489,12 +1563,12 @@ parse_resources_response (JsonNode *result)
     }
 
     obj = json_node_get_object (result);
-    if (!json_object_has_member (obj, "resources"))
+    res_arr = mcp_json_get_array (obj, "resources");
+    if (res_arr == NULL)
     {
         return NULL;
     }
 
-    res_arr = json_object_get_array_member (obj, "resources");
     len = json_array_get_length (res_arr);
 
     for (i = 0; i < len; i++)
@@ -1524,12 +1598,12 @@ parse_resource_templates_response (JsonNode *result)
     }
 
     obj = json_node_get_object (result);
-    if (!json_object_has_member (obj, "resourceTemplates"))
+    templ_arr = mcp_json_get_array (obj, "resourceTemplates");
+    if (templ_arr == NULL)
     {
         return NULL;
     }
 
-    templ_arr = json_object_get_array_member (obj, "resourceTemplates");
     len = json_array_get_length (templ_arr);
 
     for (i = 0; i < len; i++)
@@ -1559,34 +1633,34 @@ parse_resource_read_response (JsonNode *result)
     }
 
     obj = json_node_get_object (result);
-    if (!json_object_has_member (obj, "contents"))
+    contents_arr = mcp_json_get_array (obj, "contents");
+    if (contents_arr == NULL)
     {
         return NULL;
     }
 
-    contents_arr = json_object_get_array_member (obj, "contents");
     len = json_array_get_length (contents_arr);
 
     for (i = 0; i < len; i++)
     {
-        JsonObject *item = json_array_get_object_element (contents_arr, i);
-        const gchar *uri = json_object_get_string_member (item, "uri");
-        const gchar *mime_type = NULL;
+        JsonObject *item = mcp_json_array_get_object (contents_arr, i);
+        const gchar *uri = mcp_json_get_string (item, "uri");
+        const gchar *mime_type = mcp_json_get_string (item, "mimeType");
+        const gchar *text = mcp_json_get_string (item, "text");
+        const gchar *blob = mcp_json_get_string (item, "blob");
         McpResourceContents *contents = NULL;
 
-        if (json_object_has_member (item, "mimeType"))
+        if (uri == NULL)
         {
-            mime_type = json_object_get_string_member (item, "mimeType");
+            continue;
         }
 
-        if (json_object_has_member (item, "text"))
+        if (text != NULL)
         {
-            const gchar *text = json_object_get_string_member (item, "text");
             contents = mcp_resource_contents_new_text (uri, text, mime_type);
         }
-        else if (json_object_has_member (item, "blob"))
+        else if (blob != NULL)
         {
-            const gchar *blob = json_object_get_string_member (item, "blob");
             contents = mcp_resource_contents_new_blob (uri, blob, mime_type);
         }
 
@@ -1613,12 +1687,12 @@ parse_prompts_response (JsonNode *result)
     }
 
     obj = json_node_get_object (result);
-    if (!json_object_has_member (obj, "prompts"))
+    prompts_arr = mcp_json_get_array (obj, "prompts");
+    if (prompts_arr == NULL)
     {
         return NULL;
     }
 
-    prompts_arr = json_object_get_array_member (obj, "prompts");
     len = json_array_get_length (prompts_arr);
 
     for (i = 0; i < len; i++)
@@ -1650,47 +1724,48 @@ parse_prompt_get_response (JsonNode *result)
 
     obj = json_node_get_object (result);
 
-    if (json_object_has_member (obj, "description"))
-    {
-        description = json_object_get_string_member (obj, "description");
-    }
+    description = mcp_json_get_string (obj, "description");
 
     prompt_result = mcp_prompt_result_new (description);
 
-    if (json_object_has_member (obj, "messages"))
+    messages = mcp_json_get_array (obj, "messages");
+    if (messages != NULL)
     {
-        messages = json_object_get_array_member (obj, "messages");
         len = json_array_get_length (messages);
 
         for (i = 0; i < len; i++)
         {
-            JsonObject *msg_obj = json_array_get_object_element (messages, i);
-            const gchar *role_str = json_object_get_string_member (msg_obj, "role");
+            JsonObject *msg_obj = mcp_json_array_get_object (messages, i);
+            const gchar *role_str = mcp_json_get_string (msg_obj, "role");
             McpRole role = mcp_role_from_string (role_str);
             McpPromptMessage *msg = mcp_prompt_message_new (role);
             JsonArray *content;
             guint j, content_len;
 
-            if (json_object_has_member (msg_obj, "content"))
+            content = mcp_json_get_array (msg_obj, "content");
+            if (content != NULL)
             {
-                content = json_object_get_array_member (msg_obj, "content");
                 content_len = json_array_get_length (content);
 
                 for (j = 0; j < content_len; j++)
                 {
-                    JsonObject *content_obj = json_array_get_object_element (content, j);
-                    const gchar *type = json_object_get_string_member (content_obj, "type");
+                    JsonObject *content_obj = mcp_json_array_get_object (content, j);
+                    const gchar *type = mcp_json_get_string (content_obj, "type");
 
                     if (g_strcmp0 (type, "text") == 0)
                     {
-                        const gchar *text = json_object_get_string_member (content_obj, "text");
-                        mcp_prompt_message_add_text (msg, text);
+                        const gchar *text = mcp_json_get_string (content_obj, "text");
+
+                        if (text != NULL)
+                            mcp_prompt_message_add_text (msg, text);
                     }
                     else if (g_strcmp0 (type, "image") == 0)
                     {
-                        const gchar *data = json_object_get_string_member (content_obj, "data");
-                        const gchar *mime_type = json_object_get_string_member (content_obj, "mimeType");
-                        mcp_prompt_message_add_image (msg, data, mime_type);
+                        const gchar *data = mcp_json_get_string (content_obj, "data");
+                        const gchar *mime_type = mcp_json_get_string (content_obj, "mimeType");
+
+                        if (data != NULL && mime_type != NULL)
+                            mcp_prompt_message_add_image (msg, data, mime_type);
                     }
                 }
             }
@@ -1816,9 +1891,10 @@ handle_response (McpClient   *self,
                     if (JSON_NODE_HOLDS_OBJECT (result))
                     {
                         JsonObject *obj = json_node_get_object (result);
-                        if (json_object_has_member (obj, "tasks"))
+                        JsonArray *tasks_arr = mcp_json_get_array (obj, "tasks");
+
+                        if (tasks_arr != NULL)
                         {
-                            JsonArray *tasks_arr = json_object_get_array_member (obj, "tasks");
                             guint i, len = json_array_get_length (tasks_arr);
                             for (i = 0; i < len; i++)
                             {
@@ -1899,9 +1975,10 @@ handle_notification (McpClient       *self,
         if (params != NULL && JSON_NODE_HOLDS_OBJECT (params))
         {
             JsonObject *obj = json_node_get_object (params);
-            if (json_object_has_member (obj, "uri"))
+            const gchar *uri = mcp_json_get_string (obj, "uri");
+
+            if (uri != NULL)
             {
-                const gchar *uri = json_object_get_string_member (obj, "uri");
                 g_signal_emit (self, signals[SIGNAL_RESOURCE_UPDATED], 0, uri);
             }
         }
@@ -1911,18 +1988,9 @@ handle_notification (McpClient       *self,
         if (params != NULL && JSON_NODE_HOLDS_OBJECT (params))
         {
             JsonObject *obj = json_node_get_object (params);
-            const gchar *level = json_object_get_string_member (obj, "level");
-            const gchar *logger = NULL;
-            JsonNode *data = NULL;
-
-            if (json_object_has_member (obj, "logger"))
-            {
-                logger = json_object_get_string_member (obj, "logger");
-            }
-            if (json_object_has_member (obj, "data"))
-            {
-                data = json_object_get_member (obj, "data");
-            }
+            const gchar *level = mcp_json_get_string (obj, "level");
+            const gchar *logger = mcp_json_get_string (obj, "logger");
+            JsonNode *data = json_object_get_member (obj, "data");
 
             g_signal_emit (self, signals[SIGNAL_LOG_MESSAGE], 0, level, logger, data);
         }
@@ -1978,14 +2046,14 @@ handle_request (McpClient  *self,
         obj = json_node_get_object (params);
 
         /* Parse messages */
-        if (!json_object_has_member (obj, "messages"))
+        messages_arr = mcp_json_get_array (obj, "messages");
+        if (messages_arr == NULL)
         {
             send_error_response (self, id, MCP_ERROR_INVALID_PARAMS,
-                                 "Missing 'messages' field", NULL);
+                                 "Missing or non-array 'messages' field", NULL);
             return;
         }
 
-        messages_arr = json_object_get_array_member (obj, "messages");
         len = json_array_get_length (messages_arr);
         for (i = 0; i < len; i++)
         {
@@ -2000,28 +2068,25 @@ handle_request (McpClient  *self,
             }
             else
             {
-                g_warning ("Failed to parse sampling message: %s", error->message);
+                /* g_debug, not g_warning: the message came from the peer. */
+                g_debug ("Failed to parse sampling message: %s", error->message);
             }
         }
 
         /* Parse optional model preferences */
-        if (json_object_has_member (obj, "modelPreferences"))
         {
-            JsonNode *prefs_node = json_object_get_member (obj, "modelPreferences");
-            model_prefs = mcp_model_preferences_new_from_json (prefs_node, NULL);
+            JsonNode *prefs_node = mcp_json_get_member_of_type (obj, "modelPreferences",
+                                                                JSON_NODE_OBJECT);
+
+            if (prefs_node != NULL)
+            {
+                model_prefs = mcp_model_preferences_new_from_json (prefs_node, NULL);
+            }
         }
 
-        /* Parse optional system prompt */
-        if (json_object_has_member (obj, "systemPrompt"))
-        {
-            system_prompt = json_object_get_string_member (obj, "systemPrompt");
-        }
-
-        /* Parse optional max tokens */
-        if (json_object_has_member (obj, "maxTokens"))
-        {
-            max_tokens = json_object_get_int_member (obj, "maxTokens");
-        }
+        /* Parse optional system prompt and max tokens */
+        system_prompt = mcp_json_get_string (obj, "systemPrompt");
+        max_tokens = mcp_json_get_int (obj, "maxTokens", -1);
 
         /* Emit signal for application to handle */
         g_signal_emit (self, signals[SIGNAL_SAMPLING_REQUESTED], 0,

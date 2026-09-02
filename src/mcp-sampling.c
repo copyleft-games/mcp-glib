@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp.h"
+#include "mcp-json-util.h"
 
 /* ========================================================================== */
 /* McpSamplingMessage                                                         */
@@ -223,49 +224,50 @@ mcp_sampling_message_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Parse role */
-    if (!json_object_has_member (obj, "role"))
+    role_str = mcp_json_get_string (obj, "role");
+    if (role_str == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Sampling message missing required 'role' field");
+                     "Sampling message missing or non-string 'role' field");
         return NULL;
     }
-    role_str = json_object_get_string_member (obj, "role");
     role = mcp_role_from_string (role_str);
 
     message = mcp_sampling_message_new (role);
 
     /* Parse content array */
-    if (json_object_has_member (obj, "content"))
+    content = mcp_json_get_array (obj, "content");
+    if (content != NULL)
     {
-        content = json_object_get_array_member (obj, "content");
         len = json_array_get_length (content);
         for (i = 0; i < len; i++)
         {
-            JsonObject *item = json_array_get_object_element (content, i);
+            JsonObject *item = mcp_json_array_get_object (content, i);
             const gchar *type;
 
-            if (!json_object_has_member (item, "type"))
+            if (item == NULL)
             {
                 continue;
             }
 
-            type = json_object_get_string_member (item, "type");
+            type = mcp_json_get_string (item, "type");
             if (g_strcmp0 (type, "text") == 0)
             {
-                if (json_object_has_member (item, "text"))
+                const gchar *text = mcp_json_get_string (item, "text");
+
+                if (text != NULL)
                 {
-                    mcp_sampling_message_add_text (message,
-                        json_object_get_string_member (item, "text"));
+                    mcp_sampling_message_add_text (message, text);
                 }
             }
             else if (g_strcmp0 (type, "image") == 0)
             {
-                if (json_object_has_member (item, "data") &&
-                    json_object_has_member (item, "mimeType"))
+                const gchar *data = mcp_json_get_string (item, "data");
+                const gchar *mime_type = mcp_json_get_string (item, "mimeType");
+
+                if (data != NULL && mime_type != NULL)
                 {
-                    mcp_sampling_message_add_image (message,
-                        json_object_get_string_member (item, "data"),
-                        json_object_get_string_member (item, "mimeType"));
+                    mcp_sampling_message_add_image (message, data, mime_type);
                 }
             }
         }
@@ -556,38 +558,30 @@ mcp_model_preferences_new_from_json (JsonNode  *node,
     prefs = mcp_model_preferences_new ();
 
     /* Parse hints array */
-    if (json_object_has_member (obj, "hints"))
     {
-        JsonArray *hints_arr = json_object_get_array_member (obj, "hints");
+        JsonArray *hints_arr = mcp_json_get_array (obj, "hints");
         guint i;
-        guint len = json_array_get_length (hints_arr);
+        guint len = hints_arr != NULL ? json_array_get_length (hints_arr) : 0;
 
         for (i = 0; i < len; i++)
         {
-            JsonObject *hint_obj = json_array_get_object_element (hints_arr, i);
-            if (hint_obj != NULL && json_object_has_member (hint_obj, "name"))
+            JsonObject *hint_obj = mcp_json_array_get_object (hints_arr, i);
+            const gchar *hint_name = mcp_json_get_string (hint_obj, "name");
+
+            if (hint_name != NULL)
             {
-                mcp_model_preferences_add_hint (prefs,
-                    json_object_get_string_member (hint_obj, "name"));
+                mcp_model_preferences_add_hint (prefs, hint_name);
             }
         }
     }
 
     /* Parse priority values */
-    if (json_object_has_member (obj, "costPriority"))
-    {
-        prefs->cost_priority = json_object_get_double_member (obj, "costPriority");
-    }
-
-    if (json_object_has_member (obj, "speedPriority"))
-    {
-        prefs->speed_priority = json_object_get_double_member (obj, "speedPriority");
-    }
-
-    if (json_object_has_member (obj, "intelligencePriority"))
-    {
-        prefs->intelligence_priority = json_object_get_double_member (obj, "intelligencePriority");
-    }
+    prefs->cost_priority =
+        mcp_json_get_double (obj, "costPriority", prefs->cost_priority);
+    prefs->speed_priority =
+        mcp_json_get_double (obj, "speedPriority", prefs->speed_priority);
+    prefs->intelligence_priority =
+        mcp_json_get_double (obj, "intelligencePriority", prefs->intelligence_priority);
 
     return prefs;
 }
@@ -853,44 +847,46 @@ mcp_sampling_result_new_from_json (JsonNode  *node,
     obj = json_node_get_object (node);
 
     /* Parse role */
-    if (!json_object_has_member (obj, "role"))
+    role_str = mcp_json_get_string (obj, "role");
+    if (role_str == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Sampling result missing required 'role' field");
+                     "Sampling result missing or non-string 'role' field");
         return NULL;
     }
-    role_str = json_object_get_string_member (obj, "role");
     role = mcp_role_from_string (role_str);
 
     result = mcp_sampling_result_new (role);
 
     /* Parse content */
-    if (json_object_has_member (obj, "content"))
     {
-        JsonNode *content_node = json_object_get_member (obj, "content");
-        if (JSON_NODE_HOLDS_OBJECT (content_node))
+        JsonObject *content_obj = mcp_json_get_object (obj, "content");
+        const gchar *text = mcp_json_get_string (content_obj, "text");
+
+        if (text != NULL)
         {
-            JsonObject *content_obj = json_node_get_object (content_node);
-            if (json_object_has_member (content_obj, "text"))
-            {
-                mcp_sampling_result_set_text (result,
-                    json_object_get_string_member (content_obj, "text"));
-            }
+            mcp_sampling_result_set_text (result, text);
         }
     }
 
     /* Parse model */
-    if (json_object_has_member (obj, "model"))
     {
-        mcp_sampling_result_set_model (result,
-            json_object_get_string_member (obj, "model"));
+        const gchar *model = mcp_json_get_string (obj, "model");
+
+        if (model != NULL)
+        {
+            mcp_sampling_result_set_model (result, model);
+        }
     }
 
     /* Parse stop reason */
-    if (json_object_has_member (obj, "stopReason"))
     {
-        mcp_sampling_result_set_stop_reason (result,
-            json_object_get_string_member (obj, "stopReason"));
+        const gchar *stop_reason = mcp_json_get_string (obj, "stopReason");
+
+        if (stop_reason != NULL)
+        {
+            mcp_sampling_result_set_stop_reason (result, stop_reason);
+        }
     }
 
     return result;

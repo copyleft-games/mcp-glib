@@ -6,6 +6,7 @@
  */
 #include "mcp-capabilities.h"
 #include "mcp-error.h"
+#include "mcp-json-util.h"
 #undef MCP_COMPILATION
 
 /* ========================================================================== */
@@ -300,34 +301,30 @@ mcp_implementation_new_from_json (JsonNode  *node,
 
     obj = json_node_get_object (node);
 
-    if (!json_object_has_member (obj, "name"))
+    /* A present-but-not-a-string 'name' used to pass the has_member gate
+     * and arrive at mcp_implementation_new() as NULL, which trips a
+     * precondition and returns NULL with @error never set -- and both
+     * message handlers print error->message on a NULL return. */
+    name = mcp_json_get_string (obj, "name");
+    if (name == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Implementation missing 'name' field");
+                     "Implementation missing or non-string 'name' field");
         return NULL;
     }
 
-    if (!json_object_has_member (obj, "version"))
+    version = mcp_json_get_string (obj, "version");
+    if (version == NULL)
     {
         g_set_error (error, MCP_ERROR, MCP_ERROR_INVALID_PARAMS,
-                     "Implementation missing 'version' field");
+                     "Implementation missing or non-string 'version' field");
         return NULL;
     }
-
-    name = json_object_get_string_member (obj, "name");
-    version = json_object_get_string_member (obj, "version");
 
     impl = mcp_implementation_new (name, version);
 
-    if (json_object_has_member (obj, "title"))
-    {
-        impl->title = g_strdup (json_object_get_string_member (obj, "title"));
-    }
-
-    if (json_object_has_member (obj, "websiteUrl"))
-    {
-        impl->website_url = g_strdup (json_object_get_string_member (obj, "websiteUrl"));
-    }
+    impl->title = g_strdup (mcp_json_get_string (obj, "title"));
+    impl->website_url = g_strdup (mcp_json_get_string (obj, "websiteUrl"));
 
     return impl;
 }
@@ -729,41 +726,26 @@ mcp_server_capabilities_new_from_json (JsonNode  *node,
     /* Prompts */
     if (json_object_has_member (obj, "prompts"))
     {
-        JsonObject *prompts_obj = json_object_get_object_member (obj, "prompts");
+        JsonObject *prompts_obj = mcp_json_get_object (obj, "prompts");
         caps->prompts = TRUE;
-        if (prompts_obj != NULL && json_object_has_member (prompts_obj, "listChanged"))
-        {
-            caps->prompts_list_changed = json_object_get_boolean_member (prompts_obj, "listChanged");
-        }
+        caps->prompts_list_changed = mcp_json_get_boolean (prompts_obj, "listChanged", FALSE);
     }
 
     /* Resources */
     if (json_object_has_member (obj, "resources"))
     {
-        JsonObject *resources_obj = json_object_get_object_member (obj, "resources");
+        JsonObject *resources_obj = mcp_json_get_object (obj, "resources");
         caps->resources = TRUE;
-        if (resources_obj != NULL)
-        {
-            if (json_object_has_member (resources_obj, "subscribe"))
-            {
-                caps->resources_subscribe = json_object_get_boolean_member (resources_obj, "subscribe");
-            }
-            if (json_object_has_member (resources_obj, "listChanged"))
-            {
-                caps->resources_list_changed = json_object_get_boolean_member (resources_obj, "listChanged");
-            }
-        }
+        caps->resources_subscribe = mcp_json_get_boolean (resources_obj, "subscribe", FALSE);
+        caps->resources_list_changed = mcp_json_get_boolean (resources_obj, "listChanged", FALSE);
     }
 
     /* Tools */
     if (json_object_has_member (obj, "tools"))
     {
-        JsonObject *tools_obj = json_object_get_object_member (obj, "tools");
+        JsonObject *tools_obj = mcp_json_get_object (obj, "tools");
         caps->tools = TRUE;
-        if (tools_obj != NULL && json_object_has_member (tools_obj, "listChanged"))
-        {
-            caps->tools_list_changed = json_object_get_boolean_member (tools_obj, "listChanged");
-        }
+        caps->tools_list_changed = mcp_json_get_boolean (tools_obj, "listChanged", FALSE);
     }
 
     /* Completions */
@@ -781,7 +763,7 @@ mcp_server_capabilities_new_from_json (JsonNode  *node,
     /* Experimental */
     if (json_object_has_member (obj, "experimental"))
     {
-        JsonObject *exp_obj = json_object_get_object_member (obj, "experimental");
+        JsonObject *exp_obj = mcp_json_get_object (obj, "experimental");
         if (exp_obj != NULL)
         {
             GList *members = json_object_get_members (exp_obj);
@@ -1099,12 +1081,9 @@ mcp_client_capabilities_new_from_json (JsonNode  *node,
     /* Roots */
     if (json_object_has_member (obj, "roots"))
     {
-        JsonObject *roots_obj = json_object_get_object_member (obj, "roots");
+        JsonObject *roots_obj = mcp_json_get_object (obj, "roots");
         caps->roots = TRUE;
-        if (roots_obj != NULL && json_object_has_member (roots_obj, "listChanged"))
-        {
-            caps->roots_list_changed = json_object_get_boolean_member (roots_obj, "listChanged");
-        }
+        caps->roots_list_changed = mcp_json_get_boolean (roots_obj, "listChanged", FALSE);
     }
 
     /* Elicitation */
@@ -1122,7 +1101,7 @@ mcp_client_capabilities_new_from_json (JsonNode  *node,
     /* Experimental */
     if (json_object_has_member (obj, "experimental"))
     {
-        JsonObject *exp_obj = json_object_get_object_member (obj, "experimental");
+        JsonObject *exp_obj = mcp_json_get_object (obj, "experimental");
         if (exp_obj != NULL)
         {
             GList *members = json_object_get_members (exp_obj);

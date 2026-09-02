@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include "mcp-websocket-server-transport.h"
+#include "mcp-listen-util.h"
 #include "mcp-error.h"
 #undef MCP_COMPILATION
 
@@ -439,36 +440,11 @@ mcp_websocket_server_transport_connect_async (McpTransport        *transport,
     }
 
     /* Start listening */
-    if (self->host != NULL && self->host[0] != '\0')
+    if (!mcp_server_listen_on_host (self->server, self->host, self->port, &error))
     {
-        if (g_strcmp0 (self->host, "127.0.0.1") == 0 ||
-            g_strcmp0 (self->host, "localhost") == 0)
-        {
-            if (!soup_server_listen_local (self->server, self->port, 0, &error))
-            {
-                g_task_return_error (task, g_steal_pointer (&error));
-                set_state (self, MCP_TRANSPORT_STATE_ERROR);
-                return;
-            }
-        }
-        else
-        {
-            if (!soup_server_listen_all (self->server, self->port, 0, &error))
-            {
-                g_task_return_error (task, g_steal_pointer (&error));
-                set_state (self, MCP_TRANSPORT_STATE_ERROR);
-                return;
-            }
-        }
-    }
-    else
-    {
-        if (!soup_server_listen_all (self->server, self->port, 0, &error))
-        {
-            g_task_return_error (task, g_steal_pointer (&error));
-            set_state (self, MCP_TRANSPORT_STATE_ERROR);
-            return;
-        }
+        g_task_return_error (task, g_steal_pointer (&error));
+        set_state (self, MCP_TRANSPORT_STATE_ERROR);
+        return;
     }
 
     /* Get the actual port */

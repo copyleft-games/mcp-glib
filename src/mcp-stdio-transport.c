@@ -32,6 +32,13 @@
  * for communication. Messages are framed using newline-delimited JSON (NDJSON).
  */
 
+/*
+ * How much is asked of the input stream per read.  Framing is done here
+ * rather than by GDataInputStream, so this is a read size and not a limit
+ * on anything.
+ */
+#define MCP_STDIO_READ_CHUNK_BYTES (64 * 1024)
+
 struct _McpStdioTransport
 {
     GObject parent_instance;
@@ -41,7 +48,11 @@ struct _McpStdioTransport
     /* I/O streams */
     GInputStream     *input;
     GOutputStream    *output;
-    GDataInputStream *data_input;
+
+    /* Bytes read but not yet terminated by a newline.  This is what the
+     * line cap is applied to, before the next read rather than after it. */
+    GString          *inbound;
+    gsize             max_line_bytes;
 
     /* Subprocess (if created with new_subprocess) */
     GSubprocess *subprocess;
@@ -69,6 +80,7 @@ enum
     PROP_INPUT_STREAM,
     PROP_OUTPUT_STREAM,
     PROP_SUBPROCESS,
+    PROP_MAX_LINE_BYTES,
     N_PROPERTIES
 };
 
@@ -78,7 +90,7 @@ static GParamSpec *properties[N_PROPERTIES];
  * Forward declarations for read loop.
  */
 static void start_read_loop (McpStdioTransport *self);
-static void read_line_cb    (GObject      *source,
+static void read_chunk_cb   (GObject      *source,
                              GAsyncResult *result,
                              gpointer      user_data);
 static gboolean start_read_loop_idle (gpointer user_data);
@@ -154,7 +166,12 @@ mcp_stdio_transport_dispose (GObject *object)
         self->write_queue = NULL;
     }
 
-    g_clear_object (&self->data_input);
+    if (self->inbound != NULL)
+    {
+        g_string_free (self->inbound, TRUE);
+        self->inbound = NULL;
+    }
+
     g_clear_object (&self->input);
     g_clear_object (&self->output);
 
@@ -195,6 +212,29 @@ mcp_stdio_transport_get_property (GObject    *object,
         case PROP_SUBPROCESS:
             g_value_set_object (value, self->subprocess);
             break;
+        case PROP_MAX_LINE_BYTES:
+            g_value_set_uint64 (value, (guint64) self->max_line_bytes);
+            break;
+        default:
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+            break;
+    }
+}
+
+static void
+mcp_stdio_transport_set_property (GObject      *object,
+                                  guint         prop_id,
+                                  const GValue *value,
+                                  GParamSpec   *pspec)
+{
+    McpStdioTransport *self = MCP_STDIO_TRANSPORT (object);
+
+    switch (prop_id)
+    {
+        case PROP_MAX_LINE_BYTES:
+            mcp_stdio_transport_set_max_line_bytes (self,
+                                                    (gsize) g_value_get_uint64 (value));
+            break;
         default:
             G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
             break;
@@ -208,6 +248,7 @@ mcp_stdio_transport_class_init (McpStdioTransportClass *klass)
 
     object_class->dispose = mcp_stdio_transport_dispose;
     object_class->get_property = mcp_stdio_transport_get_property;
+    object_class->set_property = mcp_stdio_transport_set_property;
 
     /**
      * McpStdioTransport:input-stream:
@@ -248,6 +289,20 @@ mcp_stdio_transport_class_init (McpStdioTransportClass *klass)
                              G_PARAM_READABLE |
                              G_PARAM_STATIC_STRINGS);
 
+    /**
+     * McpStdioTransport:max-line-bytes:
+     *
+     * The cap on a single newline-delimited message, or 0 for none.
+     */
+    properties[PROP_MAX_LINE_BYTES] =
+        g_param_spec_uint64 ("max-line-bytes",
+                             "Max Line Bytes",
+                             "Cap on a single newline-delimited message",
+                             0, G_MAXUINT64,
+                             MCP_STDIO_TRANSPORT_DEFAULT_MAX_LINE_BYTES,
+                             G_PARAM_READWRITE |
+                             G_PARAM_STATIC_STRINGS);
+
     g_object_class_install_properties (object_class, N_PROPERTIES, properties);
 }
 
@@ -257,6 +312,8 @@ mcp_stdio_transport_init (McpStdioTransport *self)
     self->state = MCP_TRANSPORT_STATE_DISCONNECTED;
     self->write_queue = g_queue_new ();
     self->write_in_progress = FALSE;
+    self->inbound = g_string_new (NULL);
+    self->max_line_bytes = MCP_STDIO_TRANSPORT_DEFAULT_MAX_LINE_BYTES;
 }
 
 /*
@@ -302,10 +359,9 @@ stdio_transport_connect_async (McpTransport        *transport,
 
     set_state (self, MCP_TRANSPORT_STATE_CONNECTING);
 
-    /* Create data input stream wrapper for line reading */
-    self->data_input = g_data_input_stream_new (self->input);
-    g_data_input_stream_set_newline_type (self->data_input,
-                                          G_DATA_STREAM_NEWLINE_TYPE_LF);
+    /* Anything left over from a previous connection is not part of this
+     * one's first line. */
+    g_string_truncate (self->inbound, 0);
 
     /* Create cancellable for read loop */
     self->read_cancellable = g_cancellable_new ();
@@ -406,6 +462,32 @@ stdio_transport_disconnect_finish (McpTransport  *transport,
 }
 
 /*
+ * WriteOp:
+ *
+ * One write in flight.  Like ReadOp it owns what GIO is still using --
+ * the stream and the bytes -- and holds a weak reference to the
+ * transport.  The bytes are *stolen* from the queue entry rather than
+ * left in it: dispose frees the queue, and it used to free the buffer
+ * out from under a write that GIO was still reading from.
+ */
+typedef struct
+{
+    GWeakRef       transport;
+    GOutputStream *stream;   /* owned */
+    gchar         *data;     /* owned: taken from the queue entry */
+    gsize          len;
+} WriteOp;
+
+static void
+write_op_free (WriteOp *op)
+{
+    g_weak_ref_clear (&op->transport);
+    g_clear_object (&op->stream);
+    g_free (op->data);
+    g_free (op);
+}
+
+/*
  * write_message_cb:
  *
  * Callback for async write completion. Completes the current task
@@ -416,17 +498,30 @@ write_message_cb (GObject      *source,
                   GAsyncResult *result,
                   gpointer      user_data)
 {
-    McpStdioTransport *self = MCP_STDIO_TRANSPORT (user_data);
+    WriteOp *op = user_data;
+    g_autoptr(McpStdioTransport) self = g_weak_ref_get (&op->transport);
     WriteQueueEntry *entry;
     GError *error = NULL;
     gsize bytes_written;
+    gboolean ok;
+
+    ok = g_output_stream_write_all_finish (G_OUTPUT_STREAM (source), result,
+                                           &bytes_written, &error);
+    write_op_free (op);
+
+    /* The transport went away while the write was in flight; dispose
+     * already answered every queued task. */
+    if (self == NULL)
+    {
+        g_clear_error (&error);
+        return;
+    }
 
     /* Pop the entry we just wrote */
     entry = g_queue_pop_head (self->write_queue);
     g_return_if_fail (entry != NULL);
 
-    if (!g_output_stream_write_all_finish (G_OUTPUT_STREAM (source), result,
-                                            &bytes_written, &error))
+    if (!ok)
     {
         if (entry->task != NULL)
         {
@@ -461,6 +556,7 @@ static void
 process_write_queue (McpStdioTransport *self)
 {
     WriteQueueEntry *entry;
+    WriteOp *op;
 
     if (self->write_in_progress)
     {
@@ -478,14 +574,20 @@ process_write_queue (McpStdioTransport *self)
         return;
     }
 
+    op = g_new0 (WriteOp, 1);
+    g_weak_ref_init (&op->transport, self);
+    op->stream = g_object_ref (self->output);
+    op->data = g_steal_pointer (&entry->line);
+    op->len = entry->len;
+
     self->write_in_progress = TRUE;
-    g_output_stream_write_all_async (self->output,
-                                     entry->line,
-                                     entry->len,
+    g_output_stream_write_all_async (op->stream,
+                                     op->data,
+                                     op->len,
                                      G_PRIORITY_DEFAULT,
                                      NULL,
                                      write_message_cb,
-                                     self);
+                                     op);
 }
 
 static void
@@ -554,66 +656,82 @@ mcp_stdio_transport_iface_init (McpTransportInterface *iface)
 
 /*
  * Read loop for receiving messages.
+ *
+ * Framing is done here rather than by GDataInputStream because
+ * g_data_input_stream_read_line_async() grows its own buffer -- doubling
+ * it -- until it finds a newline, whatever
+ * g_buffered_input_stream_set_buffer_size() was set to.  Measured: a
+ * 4 KiB buffer size and 8 MiB of newline-free input leaves an 8 MiB
+ * buffer.  A cap applied to the returned line is a check on memory that
+ * has already been committed, so the cap has to be on what accumulates.
  */
 
-static void
-read_line_cb (GObject      *source,
-              GAsyncResult *result,
-              gpointer      user_data)
+/*
+ * ReadOp:
+ *
+ * One read in flight.  It owns everything GIO will touch after the
+ * callback is scheduled -- the stream and the buffer being filled -- and
+ * holds only a *weak* reference to the transport.
+ *
+ * A strong one would be a cycle with the thing that ends the read:
+ * unreffing the transport is what runs dispose, and dispose is what
+ * cancels the read loop and SIGTERMs the subprocess.  Parking a strong
+ * reference in the callback would turn the use-after-free into a
+ * transport that never goes away, holding a child nobody kills.
+ */
+typedef struct
 {
-    GDataInputStream *data_input = G_DATA_INPUT_STREAM (source);
-    McpStdioTransport *self = MCP_STDIO_TRANSPORT (user_data);
-    g_autofree gchar *line = NULL;
-    g_autoptr(GError) error = NULL;
+    GWeakRef      transport;
+    GInputStream *stream;   /* owned: GIO reads from it after finalize */
+    guint8        chunk[MCP_STDIO_READ_CHUNK_BYTES];
+} ReadOp;
+
+static ReadOp *
+read_op_new (McpStdioTransport *self)
+{
+    ReadOp *op;
+
+    op = g_new0 (ReadOp, 1);
+    g_weak_ref_init (&op->transport, self);
+    op->stream = g_object_ref (self->input);
+
+    return op;
+}
+
+static void
+read_op_free (ReadOp *op)
+{
+    g_weak_ref_clear (&op->transport);
+    g_clear_object (&op->stream);
+    g_free (op);
+}
+
+/*
+ * dispatch_line:
+ *
+ * Parses one complete frame and emits it.  A parse failure is reported
+ * and the loop continues, as it always has: a peer that sends one bad
+ * line has not necessarily lost the connection.
+ */
+static void
+dispatch_line (McpStdioTransport *self,
+               const gchar       *line,
+               gsize              length)
+{
     g_autoptr(JsonParser) parser = NULL;
+    g_autoptr(GError) error = NULL;
     JsonNode *root;
-    gsize length;
 
-    line = g_data_input_stream_read_line_finish (data_input, result, &length, &error);
-
-    /* Check for cancellation or EOF */
-    if (line == NULL)
-    {
-        if (error != NULL)
-        {
-            if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-            {
-                mcp_transport_emit_error (MCP_TRANSPORT (self), error);
-                set_state (self, MCP_TRANSPORT_STATE_ERROR);
-            }
-        }
-        else
-        {
-            /* EOF - remote end closed connection */
-            g_autoptr(GError) eof_error = NULL;
-            eof_error = g_error_new (MCP_ERROR,
-                                     MCP_ERROR_CONNECTION_CLOSED,
-                                     "Remote end closed connection");
-            mcp_transport_emit_error (MCP_TRANSPORT (self), eof_error);
-            set_state (self, MCP_TRANSPORT_STATE_DISCONNECTED);
-        }
-        return;
-    }
-
-    /* Skip empty lines */
-    if (length == 0)
-    {
-        start_read_loop (self);
-        return;
-    }
-
-    /* Parse JSON */
     parser = json_parser_new ();
-    if (!json_parser_load_from_data (parser, line, length, &error))
+    if (!json_parser_load_from_data (parser, line, (gssize) length, &error))
     {
         g_autoptr(GError) parse_error = NULL;
+
         parse_error = g_error_new (MCP_ERROR,
                                    MCP_ERROR_PARSE_ERROR,
                                    "Failed to parse JSON: %s",
                                    error->message);
         mcp_transport_emit_error (MCP_TRANSPORT (self), parse_error);
-        /* Continue reading despite parse error */
-        start_read_loop (self);
         return;
     }
 
@@ -621,25 +739,173 @@ read_line_cb (GObject      *source,
     if (root == NULL)
     {
         g_autoptr(GError) parse_error = NULL;
+
         parse_error = g_error_new (MCP_ERROR,
                                    MCP_ERROR_PARSE_ERROR,
                                    "Empty JSON root");
         mcp_transport_emit_error (MCP_TRANSPORT (self), parse_error);
-        start_read_loop (self);
         return;
     }
 
-    /* Emit message-received signal */
     mcp_transport_emit_message_received (MCP_TRANSPORT (self), root);
+}
 
-    /* Continue read loop */
+/*
+ * refuse_oversized_line:
+ *
+ * A peer that has sent more than the cap without a newline is not going
+ * to become valid by being read from again, so the connection ends here
+ * rather than after the memory has been spent.
+ */
+static void
+refuse_oversized_line (McpStdioTransport *self)
+{
+    g_autoptr(GError) error = NULL;
+
+    error = g_error_new (MCP_ERROR,
+                         MCP_ERROR_INVALID_REQUEST,
+                         "Message exceeds the %" G_GSIZE_FORMAT
+                         "-byte line limit without a newline",
+                         self->max_line_bytes);
+
+    g_string_truncate (self->inbound, 0);
+    mcp_transport_emit_error (MCP_TRANSPORT (self), error);
+    set_state (self, MCP_TRANSPORT_STATE_ERROR);
+}
+
+/*
+ * drain_inbound:
+ *
+ * Every whole line in what has arrived so far.
+ *
+ * Returns: %TRUE if the read loop should be re-armed
+ */
+static gboolean
+drain_inbound (McpStdioTransport *self)
+{
+    for (;;)
+    {
+        gchar *newline;
+        gsize length;
+        g_autofree gchar *line = NULL;
+
+        newline = memchr (self->inbound->str, '\n', self->inbound->len);
+
+        if (newline == NULL)
+        {
+            if (self->max_line_bytes > 0 &&
+                self->inbound->len > self->max_line_bytes)
+            {
+                refuse_oversized_line (self);
+                return FALSE;
+            }
+
+            return TRUE;
+        }
+
+        length = (gsize) (newline - self->inbound->str);
+
+        /* A \r\n peer.  The old reader was set to LF-only, which left the
+         * \r inside the JSON text; json-glib tolerates it as trailing
+         * whitespace, but only by luck. */
+        if (length > 0 && self->inbound->str[length - 1] == '\r')
+        {
+            length--;
+        }
+
+        line = g_strndup (self->inbound->str, length);
+        g_string_erase (self->inbound, 0,
+                        (gssize) (newline - self->inbound->str) + 1);
+
+        if (self->max_line_bytes > 0 && length > self->max_line_bytes)
+        {
+            refuse_oversized_line (self);
+            return FALSE;
+        }
+
+        /* Blank lines are framing, not messages. */
+        if (length == 0)
+        {
+            continue;
+        }
+
+        dispatch_line (self, line, length);
+
+        /* A message-received handler is allowed to disconnect. */
+        if (self->state != MCP_TRANSPORT_STATE_CONNECTED)
+        {
+            return FALSE;
+        }
+    }
+}
+
+static void
+read_chunk_cb (GObject      *source,
+               GAsyncResult *result,
+               gpointer      user_data)
+{
+    ReadOp *op = user_data;
+    g_autoptr(McpStdioTransport) self = g_weak_ref_get (&op->transport);
+    g_autoptr(GError) error = NULL;
+    gssize got;
+
+    got = g_input_stream_read_finish (G_INPUT_STREAM (source), result, &error);
+
+    /* The transport was finalised while this read was in flight.  Nothing
+     * to deliver the bytes to, and nothing to re-arm. */
+    if (self == NULL)
+    {
+        read_op_free (op);
+        return;
+    }
+
+    if (got < 0)
+    {
+        if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+            mcp_transport_emit_error (MCP_TRANSPORT (self), error);
+            set_state (self, MCP_TRANSPORT_STATE_ERROR);
+        }
+        read_op_free (op);
+        return;
+    }
+
+    if (got == 0)
+    {
+        /* EOF - remote end closed connection */
+        g_autoptr(GError) eof_error = NULL;
+
+        eof_error = g_error_new (MCP_ERROR,
+                                 MCP_ERROR_CONNECTION_CLOSED,
+                                 "Remote end closed connection");
+        mcp_transport_emit_error (MCP_TRANSPORT (self), eof_error);
+        set_state (self, MCP_TRANSPORT_STATE_DISCONNECTED);
+        read_op_free (op);
+        return;
+    }
+
+    g_string_append_len (self->inbound, (const gchar *) op->chunk, got);
+    read_op_free (op);
+
+    if (!drain_inbound (self))
+    {
+        return;
+    }
+
     start_read_loop (self);
 }
 
 static void
 start_read_loop (McpStdioTransport *self)
 {
+    ReadOp *op;
+
     if (self->state != MCP_TRANSPORT_STATE_CONNECTED)
+    {
+        return;
+    }
+
+    if (self->input == NULL)
     {
         return;
     }
@@ -650,11 +916,14 @@ start_read_loop (McpStdioTransport *self)
         return;
     }
 
-    g_data_input_stream_read_line_async (self->data_input,
-                                         G_PRIORITY_DEFAULT,
-                                         self->read_cancellable,
-                                         read_line_cb,
-                                         self);
+    op = read_op_new (self);
+    g_input_stream_read_async (op->stream,
+                               op->chunk,
+                               sizeof op->chunk,
+                               G_PRIORITY_DEFAULT,
+                               self->read_cancellable,
+                               read_chunk_cb,
+                               op);
 }
 
 /*
@@ -850,4 +1119,46 @@ mcp_stdio_transport_get_output_stream (McpStdioTransport *self)
     g_return_val_if_fail (MCP_IS_STDIO_TRANSPORT (self), NULL);
 
     return self->output;
+}
+
+/**
+ * mcp_stdio_transport_get_max_line_bytes:
+ * @self: an #McpStdioTransport
+ *
+ * Gets the cap on a single newline-delimited message.
+ *
+ * Returns: the cap in bytes, or 0 if the transport accumulates without a
+ *   bound
+ */
+gsize
+mcp_stdio_transport_get_max_line_bytes (McpStdioTransport *self)
+{
+    g_return_val_if_fail (MCP_IS_STDIO_TRANSPORT (self), 0);
+
+    return self->max_line_bytes;
+}
+
+/**
+ * mcp_stdio_transport_set_max_line_bytes:
+ * @self: an #McpStdioTransport
+ * @max_line_bytes: the cap in bytes, or 0 to remove it
+ *
+ * Sets the cap on a single newline-delimited message.  The cap is applied
+ * to the bytes held while looking for the newline, before the next read
+ * rather than after it, which is the difference between refusing an
+ * over-long message and buffering it first.
+ */
+void
+mcp_stdio_transport_set_max_line_bytes (McpStdioTransport *self,
+                                        gsize              max_line_bytes)
+{
+    g_return_if_fail (MCP_IS_STDIO_TRANSPORT (self));
+
+    if (self->max_line_bytes == max_line_bytes)
+    {
+        return;
+    }
+
+    self->max_line_bytes = max_line_bytes;
+    g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_MAX_LINE_BYTES]);
 }
