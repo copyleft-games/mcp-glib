@@ -285,7 +285,7 @@ mcp_tool_init (McpTool *self)
     priv->open_world_hint = TRUE;
 }
 
-/**
+/*
  * mcp_tool_new:
  * @name: the tool name
  * @description: (nullable): human-readable description
@@ -304,7 +304,7 @@ mcp_tool_new (const gchar *name,
                          NULL);
 }
 
-/**
+/*
  * mcp_tool_get_name:
  * @self: an #McpTool
  *
@@ -323,7 +323,7 @@ mcp_tool_get_name (McpTool *self)
     return priv->name;
 }
 
-/**
+/*
  * mcp_tool_set_name:
  * @self: an #McpTool
  * @name: the tool name
@@ -338,7 +338,7 @@ mcp_tool_set_name (McpTool     *self,
     g_object_set (self, "name", name, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_title:
  * @self: an #McpTool
  *
@@ -357,7 +357,7 @@ mcp_tool_get_title (McpTool *self)
     return priv->title;
 }
 
-/**
+/*
  * mcp_tool_set_title:
  * @self: an #McpTool
  * @title: (nullable): the tool title
@@ -372,7 +372,7 @@ mcp_tool_set_title (McpTool     *self,
     g_object_set (self, "title", title, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_description:
  * @self: an #McpTool
  *
@@ -391,7 +391,7 @@ mcp_tool_get_description (McpTool *self)
     return priv->description;
 }
 
-/**
+/*
  * mcp_tool_set_description:
  * @self: an #McpTool
  * @description: (nullable): the tool description
@@ -406,7 +406,7 @@ mcp_tool_set_description (McpTool     *self,
     g_object_set (self, "description", description, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_input_schema:
  * @self: an #McpTool
  *
@@ -425,7 +425,7 @@ mcp_tool_get_input_schema (McpTool *self)
     return priv->input_schema;
 }
 
-/**
+/*
  * mcp_tool_set_input_schema:
  * @self: an #McpTool
  * @schema: (nullable): a #JsonNode containing the JSON Schema
@@ -440,7 +440,7 @@ mcp_tool_set_input_schema (McpTool  *self,
     g_object_set (self, "input-schema", schema, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_output_schema:
  * @self: an #McpTool
  *
@@ -459,7 +459,7 @@ mcp_tool_get_output_schema (McpTool *self)
     return priv->output_schema;
 }
 
-/**
+/*
  * mcp_tool_set_output_schema:
  * @self: an #McpTool
  * @schema: (nullable): a #JsonNode containing the JSON Schema
@@ -474,7 +474,7 @@ mcp_tool_set_output_schema (McpTool  *self,
     g_object_set (self, "output-schema", schema, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_read_only_hint:
  * @self: an #McpTool
  *
@@ -493,7 +493,7 @@ mcp_tool_get_read_only_hint (McpTool *self)
     return priv->read_only_hint;
 }
 
-/**
+/*
  * mcp_tool_set_read_only_hint:
  * @self: an #McpTool
  * @read_only: whether the tool is read-only
@@ -508,7 +508,7 @@ mcp_tool_set_read_only_hint (McpTool  *self,
     g_object_set (self, "read-only-hint", read_only, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_destructive_hint:
  * @self: an #McpTool
  *
@@ -527,7 +527,7 @@ mcp_tool_get_destructive_hint (McpTool *self)
     return priv->destructive_hint;
 }
 
-/**
+/*
  * mcp_tool_set_destructive_hint:
  * @self: an #McpTool
  * @destructive: whether the tool may be destructive
@@ -542,7 +542,7 @@ mcp_tool_set_destructive_hint (McpTool  *self,
     g_object_set (self, "destructive-hint", destructive, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_idempotent_hint:
  * @self: an #McpTool
  *
@@ -561,7 +561,7 @@ mcp_tool_get_idempotent_hint (McpTool *self)
     return priv->idempotent_hint;
 }
 
-/**
+/*
  * mcp_tool_set_idempotent_hint:
  * @self: an #McpTool
  * @idempotent: whether the tool is idempotent
@@ -576,7 +576,7 @@ mcp_tool_set_idempotent_hint (McpTool  *self,
     g_object_set (self, "idempotent-hint", idempotent, NULL);
 }
 
-/**
+/*
  * mcp_tool_get_open_world_hint:
  * @self: an #McpTool
  *
@@ -595,7 +595,7 @@ mcp_tool_get_open_world_hint (McpTool *self)
     return priv->open_world_hint;
 }
 
-/**
+/*
  * mcp_tool_set_open_world_hint:
  * @self: an #McpTool
  * @open_world: whether the tool has open world interaction
@@ -610,7 +610,7 @@ mcp_tool_set_open_world_hint (McpTool  *self,
     g_object_set (self, "open-world-hint", open_world, NULL);
 }
 
-/**
+/*
  * mcp_tool_to_json:
  * @self: an #McpTool
  *
@@ -720,7 +720,7 @@ mcp_tool_to_json (McpTool *self)
     return result;
 }
 
-/**
+/*
  * mcp_tool_new_from_json:
  * @node: a #JsonNode containing a tool definition
  * @error: (nullable): return location for a #GError

@@ -15,7 +15,11 @@ struct _McpCompletionResult
     gboolean  has_more;    /* Whether more completions are available */
 };
 
-/**
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpCompletionResult, mcp_completion_result,
+	mcp_completion_result_ref, mcp_completion_result_unref)
+
+/*
  * mcp_completion_result_new:
  *
  * Creates a new completion result.
@@ -36,7 +40,7 @@ mcp_completion_result_new (void)
     return result;
 }
 
-/**
+/*
  * mcp_completion_result_ref:
  * @result: a #McpCompletionResult
  *
@@ -53,7 +57,7 @@ mcp_completion_result_ref (McpCompletionResult *result)
     return result;
 }
 
-/**
+/*
  * mcp_completion_result_unref:
  * @result: a #McpCompletionResult
  *
@@ -71,7 +75,7 @@ mcp_completion_result_unref (McpCompletionResult *result)
     }
 }
 
-/**
+/*
  * mcp_completion_result_add_value:
  * @result: a #McpCompletionResult
  * @value: the completion value
@@ -88,7 +92,7 @@ mcp_completion_result_add_value (McpCompletionResult *result,
     result->values = g_list_append (result->values, g_strdup (value));
 }
 
-/**
+/*
  * mcp_completion_result_get_values:
  * @result: a #McpCompletionResult
  *
@@ -103,7 +107,7 @@ mcp_completion_result_get_values (McpCompletionResult *result)
     return result->values;
 }
 
-/**
+/*
  * mcp_completion_result_set_total:
  * @result: a #McpCompletionResult
  * @total: the total number of completions available
@@ -119,7 +123,7 @@ mcp_completion_result_set_total (McpCompletionResult *result,
     result->total = total;
 }
 
-/**
+/*
  * mcp_completion_result_get_total:
  * @result: a #McpCompletionResult
  *
@@ -134,7 +138,7 @@ mcp_completion_result_get_total (McpCompletionResult *result)
     return result->total;
 }
 
-/**
+/*
  * mcp_completion_result_set_has_more:
  * @result: a #McpCompletionResult
  * @has_more: whether more completions are available
@@ -149,7 +153,7 @@ mcp_completion_result_set_has_more (McpCompletionResult *result,
     result->has_more = has_more;
 }
 
-/**
+/*
  * mcp_completion_result_get_has_more:
  * @result: a #McpCompletionResult
  *
@@ -164,7 +168,7 @@ mcp_completion_result_get_has_more (McpCompletionResult *result)
     return result->has_more;
 }
 
-/**
+/*
  * mcp_completion_result_to_json:
  * @result: a #McpCompletionResult
  *
@@ -221,7 +225,7 @@ mcp_completion_result_to_json (McpCompletionResult *result)
     return node;
 }
 
-/**
+/*
  * mcp_completion_result_new_from_json:
  * @node: a #JsonNode containing a result
  * @error: (nullable): return location for a #GError

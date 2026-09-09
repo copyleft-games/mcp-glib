@@ -1,0 +1,23 @@
+#+title: Reliable MCP introspection metadata
+#+description: Boxed protocol records, canonical annotations, and strict GIR regression checks
+#+authors: mcp-glib contributors
+#+categories: development introspection
+#+created: 2026-09-05T00:00:00-04:00
+#+updated: 2026-09-05T00:00:00-04:00
+#+version: 1
+
+* Defect and observable behavior
+The scanner previously emitted duplicate-documentation warnings for public functions documented in both headers and implementations, invalid callback closure annotations, an invalid nullable annotation on a scalar progress total, an untyped sampling-message list, and an unmatched error domain. Nine reference-counted protocol records were unregistered, so their constructors and result-returning methods were marked non-introspectable. A successful non-strict scan therefore produced bindings missing usable APIs.
+
+* Repair
+Public headers are the canonical gtk-doc source. Existing implementation commentary remains ordinary C comments, and signal documentation remains scanner-visible at the signal definition. Callback closure and destruction annotations attach to the callback argument and name its companion arguments. The sampling signal explicitly identifies its list container and elements. A progress total uses its existing -1 sentinel rather than pointer nullability.
+
+ToolResult, ResourceContents, PromptMessage, PromptResult, SamplingMessage, ModelPreferences, SamplingResult, Root, and CompletionResult now register boxed GTypes. Their boxed copy operation takes a reference and their free operation releases it; copying does not deep-copy mutable protocol data. Existing C constructors and ownership semantics are unchanged. McpErrorCode is a registered enum using mcp_error_get_type(), allowing the scanner to associate the existing mcp_error_quark() domain without renaming C or binding APIs.
+
+* Regression checks
+Run =make tests= for the normal GTest suites, including boxed lifetime checks that release the original caller reference while retaining a GValue-owned reference and exercise all nine types. The error-enum regression checks registration and local/wire value preservation.
+
+Run =make test-gir= to force a fresh scan with cache disabled and warnings fatal, compile the typelib, reject any non-introspectable public callable, and verify boxed type and error-domain metadata. The same scanner reproducer failed before the repair and succeeds afterward. The ordinary =make gir= target also treats warnings as errors. Run =shellcheck tests/test-gir.sh= when changing the regression script.
+
+* Build dependencies
+Fedora packages: =gcc=, =make=, =pkgconf-pkg-config=, =glib2-devel=, =json-glib-devel=, =libsoup3-devel=, =libdex-devel=, =gobject-introspection-devel=, =libtool=, =ripgrep=, and =ShellCheck=. HTTP and Unix-socket integration tests need permission to create local listeners.

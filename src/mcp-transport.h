@@ -61,8 +61,8 @@ struct _McpTransportInterface
      * McpTransportInterface::connect_async:
      * @self: an #McpTransport
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Initiates an asynchronous connection.
      */
@@ -89,8 +89,8 @@ struct _McpTransportInterface
      * McpTransportInterface::disconnect_async:
      * @self: an #McpTransport
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Initiates an asynchronous disconnection.
      */
@@ -118,8 +118,8 @@ struct _McpTransportInterface
      * @self: an #McpTransport
      * @message: the JSON message to send
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Sends a JSON message asynchronously.
      */
@@ -161,8 +161,8 @@ McpTransportState mcp_transport_get_state (McpTransport *self);
  * mcp_transport_connect_async:
  * @self: an #McpTransport
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Initiates an asynchronous connection.
  */
@@ -189,8 +189,8 @@ gboolean mcp_transport_connect_finish (McpTransport  *self,
  * mcp_transport_disconnect_async:
  * @self: an #McpTransport
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Initiates an asynchronous disconnection.
  */
@@ -218,8 +218,8 @@ gboolean mcp_transport_disconnect_finish (McpTransport  *self,
  * @self: an #McpTransport
  * @message: (transfer none): the JSON message to send
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Sends a JSON message asynchronously.
  */

@@ -290,8 +290,8 @@ mcp_client_class_init (McpClientClass *klass)
      * McpClient::sampling-requested:
      * @self: the #McpClient
      * @request_id: the JSON-RPC request ID
-     * @messages: (element-type McpSamplingMessage): the messages list
-     * @model_preferences: (nullable): the #McpModelPreferences
+     * @messages: (type GList) (element-type McpSamplingMessage): the messages list
+     * @model_preferences: (type McpModelPreferences) (nullable): the #McpModelPreferences
      * @system_prompt: (nullable): the system prompt
      * @max_tokens: the maximum tokens (-1 if not specified)
      *
@@ -334,7 +334,7 @@ mcp_client_init (McpClient *self)
     self->capabilities = mcp_client_capabilities_new ();
 }
 
-/**
+/*
  * mcp_client_new:
  * @name: the client name
  * @version: the client version
@@ -2364,7 +2364,7 @@ mcp_client_list_tasks_finish (McpClient     *self,
 /* Sampling Response API                                                      */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_client_respond_sampling:
  * @self: an #McpClient
  * @request_id: the request ID from the sampling-requested signal
@@ -2390,7 +2390,7 @@ mcp_client_respond_sampling (McpClient         *self,
     mcp_sampling_result_unref (result);
 }
 
-/**
+/*
  * mcp_client_reject_sampling:
  * @self: an #McpClient
  * @request_id: the request ID from the sampling-requested signal
@@ -2417,7 +2417,7 @@ mcp_client_reject_sampling (McpClient   *self,
 /* Roots Management API                                                       */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_client_add_root:
  * @self: an #McpClient
  * @root: (transfer none): the #McpRoot to add
@@ -2435,7 +2435,7 @@ mcp_client_add_root (McpClient *self,
     self->roots = g_list_append (self->roots, mcp_root_ref (root));
 }
 
-/**
+/*
  * mcp_client_remove_root:
  * @self: an #McpClient
  * @uri: the root URI to remove
@@ -2468,7 +2468,7 @@ mcp_client_remove_root (McpClient   *self,
     return FALSE;
 }
 
-/**
+/*
  * mcp_client_list_roots:
  * @self: an #McpClient
  *
@@ -2483,7 +2483,7 @@ mcp_client_list_roots (McpClient *self)
     return self->roots;
 }
 
-/**
+/*
  * mcp_client_notify_roots_changed:
  * @self: an #McpClient
  *
@@ -2515,7 +2515,7 @@ mcp_client_notify_roots_changed (McpClient *self)
 /* Completion Request API                                                     */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_client_complete_async:
  * @self: an #McpClient
  * @ref_type: the reference type ("ref/prompt" or "ref/resource")
@@ -2603,7 +2603,7 @@ mcp_client_complete_async (McpClient           *self,
     g_object_unref (task);
 }
 
-/**
+/*
  * mcp_client_complete_finish:
  * @self: an #McpClient
  * @result: the #GAsyncResult

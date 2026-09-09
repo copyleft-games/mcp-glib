@@ -162,7 +162,7 @@ mcp_implementation_init (McpImplementation *self)
     (void)self;
 }
 
-/**
+/*
  * mcp_implementation_new:
  * @name: the implementation name
  * @version: the implementation version
@@ -230,7 +230,7 @@ mcp_implementation_set_website_url (McpImplementation *self,
     self->website_url = g_strdup (url);
 }
 
-/**
+/*
  * mcp_implementation_to_json:
  * @self: an #McpImplementation
  *
@@ -272,7 +272,7 @@ mcp_implementation_to_json (McpImplementation *self)
     return json_builder_get_root (builder);
 }
 
-/**
+/*
  * mcp_implementation_new_from_json:
  * @node: a #JsonNode
  * @error: (nullable): return location for a #GError
@@ -390,7 +390,7 @@ mcp_server_capabilities_init (McpServerCapabilities *self)
                                                  (GDestroyNotify)json_node_unref);
 }
 
-/**
+/*
  * mcp_server_capabilities_new:
  *
  * Creates a new server capabilities object.
@@ -579,7 +579,7 @@ mcp_server_capabilities_get_experimental (McpServerCapabilities *self,
     return g_hash_table_lookup (self->experimental, name);
 }
 
-/**
+/*
  * mcp_server_capabilities_to_json:
  * @self: an #McpServerCapabilities
  *
@@ -689,7 +689,7 @@ mcp_server_capabilities_to_json (McpServerCapabilities *self)
     return json_builder_get_root (builder);
 }
 
-/**
+/*
  * mcp_server_capabilities_new_from_json:
  * @node: a #JsonNode
  * @error: (nullable): return location for a #GError
@@ -837,7 +837,7 @@ mcp_client_capabilities_init (McpClientCapabilities *self)
                                                  (GDestroyNotify)json_node_unref);
 }
 
-/**
+/*
  * mcp_client_capabilities_new:
  *
  * Creates a new client capabilities object.
@@ -965,7 +965,7 @@ mcp_client_capabilities_get_experimental (McpClientCapabilities *self,
     return g_hash_table_lookup (self->experimental, name);
 }
 
-/**
+/*
  * mcp_client_capabilities_to_json:
  * @self: an #McpClientCapabilities
  *
@@ -1044,7 +1044,7 @@ mcp_client_capabilities_to_json (McpClientCapabilities *self)
     return json_builder_get_root (builder);
 }
 
-/**
+/*
  * mcp_client_capabilities_new_from_json:
  * @node: a #JsonNode
  * @error: (nullable): return location for a #GError

@@ -9,7 +9,7 @@
 #define MCP_ERROR_H
 
 
-#include <glib.h>
+#include <glib-object.h>
 
 G_BEGIN_DECLS
 
@@ -70,6 +70,17 @@ typedef enum {
     MCP_ERROR_TASK_NOT_FOUND,
     MCP_ERROR_CAPABILITY_NOT_SUPPORTED
 } McpErrorCode;
+
+#define MCP_TYPE_ERROR_CODE (mcp_error_get_type ())
+
+/**
+ * mcp_error_get_type:
+ *
+ * Gets the enum type associated with mcp_error_quark().
+ *
+ * Returns: the registered #GType for #McpErrorCode
+ */
+GType mcp_error_get_type (void) G_GNUC_CONST;
 
 /**
  * mcp_error_code_is_json_rpc:

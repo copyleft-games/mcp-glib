@@ -23,7 +23,7 @@ G_DEFINE_BOXED_TYPE (McpPromptArgument,
                      mcp_prompt_argument_copy,
                      mcp_prompt_argument_free)
 
-/**
+/*
  * mcp_prompt_argument_new:
  * @name: the argument name
  * @description: (nullable): human-readable description
@@ -48,7 +48,7 @@ mcp_prompt_argument_new (const gchar *name,
     return arg;
 }
 
-/**
+/*
  * mcp_prompt_argument_copy:
  * @arg: an #McpPromptArgument
  *
@@ -65,7 +65,7 @@ mcp_prompt_argument_copy (const McpPromptArgument *arg)
     return mcp_prompt_argument_new (arg->name, arg->description, arg->required);
 }
 
-/**
+/*
  * mcp_prompt_argument_free:
  * @arg: an #McpPromptArgument
  *
@@ -82,7 +82,7 @@ mcp_prompt_argument_free (McpPromptArgument *arg)
     g_slice_free (McpPromptArgument, arg);
 }
 
-/**
+/*
  * mcp_prompt_argument_get_name:
  * @arg: an #McpPromptArgument
  *
@@ -97,7 +97,7 @@ mcp_prompt_argument_get_name (const McpPromptArgument *arg)
     return arg->name;
 }
 
-/**
+/*
  * mcp_prompt_argument_get_description:
  * @arg: an #McpPromptArgument
  *
@@ -112,7 +112,7 @@ mcp_prompt_argument_get_description (const McpPromptArgument *arg)
     return arg->description;
 }
 
-/**
+/*
  * mcp_prompt_argument_get_required:
  * @arg: an #McpPromptArgument
  *
@@ -127,7 +127,7 @@ mcp_prompt_argument_get_required (const McpPromptArgument *arg)
     return arg->required;
 }
 
-/**
+/*
  * mcp_prompt_argument_to_json:
  * @arg: an #McpPromptArgument
  *
@@ -173,7 +173,7 @@ mcp_prompt_argument_to_json (const McpPromptArgument *arg)
     return result;
 }
 
-/**
+/*
  * mcp_prompt_argument_new_from_json:
  * @node: a #JsonNode containing an argument definition
  * @error: (nullable): return location for a #GError
@@ -364,7 +364,7 @@ mcp_prompt_init (McpPrompt *self)
     /* No default initialization needed */
 }
 
-/**
+/*
  * mcp_prompt_new:
  * @name: the prompt name
  * @description: (nullable): human-readable description
@@ -383,7 +383,7 @@ mcp_prompt_new (const gchar *name,
                          NULL);
 }
 
-/**
+/*
  * mcp_prompt_get_name:
  * @self: an #McpPrompt
  *
@@ -402,7 +402,7 @@ mcp_prompt_get_name (McpPrompt *self)
     return priv->name;
 }
 
-/**
+/*
  * mcp_prompt_set_name:
  * @self: an #McpPrompt
  * @name: the prompt name
@@ -417,7 +417,7 @@ mcp_prompt_set_name (McpPrompt   *self,
     g_object_set (self, "name", name, NULL);
 }
 
-/**
+/*
  * mcp_prompt_get_title:
  * @self: an #McpPrompt
  *
@@ -436,7 +436,7 @@ mcp_prompt_get_title (McpPrompt *self)
     return priv->title;
 }
 
-/**
+/*
  * mcp_prompt_set_title:
  * @self: an #McpPrompt
  * @title: (nullable): the prompt title
@@ -451,7 +451,7 @@ mcp_prompt_set_title (McpPrompt   *self,
     g_object_set (self, "title", title, NULL);
 }
 
-/**
+/*
  * mcp_prompt_get_description:
  * @self: an #McpPrompt
  *
@@ -470,7 +470,7 @@ mcp_prompt_get_description (McpPrompt *self)
     return priv->description;
 }
 
-/**
+/*
  * mcp_prompt_set_description:
  * @self: an #McpPrompt
  * @description: (nullable): the prompt description
@@ -485,7 +485,7 @@ mcp_prompt_set_description (McpPrompt   *self,
     g_object_set (self, "description", description, NULL);
 }
 
-/**
+/*
  * mcp_prompt_get_arguments:
  * @self: an #McpPrompt
  *
@@ -505,7 +505,7 @@ mcp_prompt_get_arguments (McpPrompt *self)
     return priv->arguments;
 }
 
-/**
+/*
  * mcp_prompt_add_argument:
  * @self: an #McpPrompt
  * @arg: (transfer full): an #McpPromptArgument to add
@@ -525,7 +525,7 @@ mcp_prompt_add_argument (McpPrompt          *self,
     priv->arguments = g_list_append (priv->arguments, arg);
 }
 
-/**
+/*
  * mcp_prompt_add_argument_full:
  * @self: an #McpPrompt
  * @name: the argument name
@@ -549,7 +549,7 @@ mcp_prompt_add_argument_full (McpPrompt   *self,
     mcp_prompt_add_argument (self, arg);
 }
 
-/**
+/*
  * mcp_prompt_clear_arguments:
  * @self: an #McpPrompt
  *
@@ -567,7 +567,7 @@ mcp_prompt_clear_arguments (McpPrompt *self)
     priv->arguments = NULL;
 }
 
-/**
+/*
  * mcp_prompt_to_json:
  * @self: an #McpPrompt
  *
@@ -633,7 +633,7 @@ mcp_prompt_to_json (McpPrompt *self)
     return result;
 }
 
-/**
+/*
  * mcp_prompt_new_from_json:
  * @node: a #JsonNode containing a prompt definition
  * @error: (nullable): return location for a #GError

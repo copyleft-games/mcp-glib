@@ -110,7 +110,7 @@ mcp_message_init (McpMessage *self)
     (void)self;
 }
 
-/**
+/*
  * mcp_message_get_message_type:
  * @self: an #McpMessage
  *
@@ -129,7 +129,7 @@ mcp_message_get_message_type (McpMessage *self)
     return priv->message_type;
 }
 
-/**
+/*
  * mcp_message_to_json:
  * @self: an #McpMessage
  *
@@ -154,7 +154,7 @@ mcp_message_to_json (McpMessage *self)
     return NULL;
 }
 
-/**
+/*
  * mcp_message_to_string:
  * @self: an #McpMessage
  *
@@ -182,7 +182,7 @@ mcp_message_to_string (McpMessage *self)
     return json_generator_to_data (generator, NULL);
 }
 
-/**
+/*
  * mcp_message_parse:
  * @json_str: a JSON string to parse
  * @error: (nullable): return location for a #GError
@@ -349,7 +349,7 @@ classify_id (JsonObject  *obj,
     return ID_FORM_INVALID;
 }
 
-/**
+/*
  * mcp_message_new_from_json:
  * @node: a #JsonNode containing a message
  * @error: (nullable): return location for a #GError
@@ -808,7 +808,7 @@ mcp_request_init (McpRequest *self)
     priv->message_type = MCP_MESSAGE_TYPE_REQUEST;
 }
 
-/**
+/*
  * mcp_request_new:
  * @method: the method name
  * @id: the request ID
@@ -830,7 +830,7 @@ mcp_request_new (const gchar *method,
                          NULL);
 }
 
-/**
+/*
  * mcp_request_new_with_params:
  * @method: the method name
  * @id: the request ID
@@ -863,7 +863,7 @@ mcp_request_new_with_params (const gchar *method,
     return request;
 }
 
-/**
+/*
  * mcp_request_get_id:
  * @self: an #McpRequest
  *
@@ -879,7 +879,7 @@ mcp_request_get_id (McpRequest *self)
     return self->id;
 }
 
-/**
+/*
  * mcp_request_get_id_is_number:
  * @self: an #McpRequest
  *
@@ -893,7 +893,7 @@ mcp_request_get_id_is_number (McpRequest *self)
     return self->id_is_number;
 }
 
-/**
+/*
  * mcp_request_set_id_is_number:
  * @self: an #McpRequest
  * @is_number: whether the id arrived as a JSON number
@@ -908,7 +908,7 @@ mcp_request_set_id_is_number (McpRequest *self, gboolean is_number)
 
 
 
-/**
+/*
  * mcp_request_get_method:
  * @self: an #McpRequest
  *
@@ -924,7 +924,7 @@ mcp_request_get_method (McpRequest *self)
     return self->method;
 }
 
-/**
+/*
  * mcp_request_get_params:
  * @self: an #McpRequest
  *
@@ -940,7 +940,7 @@ mcp_request_get_params (McpRequest *self)
     return self->params;
 }
 
-/**
+/*
  * mcp_request_set_params:
  * @self: an #McpRequest
  * @params: (nullable) (transfer full): the parameters
@@ -1131,7 +1131,7 @@ mcp_response_init (McpResponse *self)
     priv->message_type = MCP_MESSAGE_TYPE_RESPONSE;
 }
 
-/**
+/*
  * mcp_response_new:
  * @id: the request ID this is responding to
  * @result: (transfer full): the result as a #JsonNode
@@ -1157,7 +1157,7 @@ mcp_response_new (const gchar *id,
     return response;
 }
 
-/**
+/*
  * mcp_response_get_id:
  * @self: an #McpResponse
  *
@@ -1173,7 +1173,7 @@ mcp_response_get_id (McpResponse *self)
     return self->id;
 }
 
-/**
+/*
  * mcp_response_set_id_is_number:
  * @self: an #McpResponse
  * @is_number: whether to serialise the id as a JSON number
@@ -1190,7 +1190,7 @@ mcp_response_set_id_is_number (McpResponse *self, gboolean is_number)
 }
 
 
-/**
+/*
  * mcp_response_get_result:
  * @self: an #McpResponse
  *
@@ -1445,7 +1445,7 @@ mcp_error_response_init (McpErrorResponse *self)
     priv->message_type = MCP_MESSAGE_TYPE_ERROR;
 }
 
-/**
+/*
  * mcp_error_response_new:
  * @id: (nullable): the request ID this is responding to
  * @code: the error code
@@ -1469,7 +1469,7 @@ mcp_error_response_new (const gchar *id,
                          NULL);
 }
 
-/**
+/*
  * mcp_error_response_new_with_data:
  * @id: (nullable): the request ID
  * @code: the error code
@@ -1504,7 +1504,7 @@ mcp_error_response_new_with_data (const gchar *id,
     return err;
 }
 
-/**
+/*
  * mcp_error_response_new_from_gerror:
  * @id: (nullable): the request ID
  * @error: a #GError
@@ -1534,7 +1534,7 @@ mcp_error_response_new_from_gerror (const gchar  *id,
     return mcp_error_response_new (id, code, error->message);
 }
 
-/**
+/*
  * mcp_error_response_get_id:
  * @self: an #McpErrorResponse
  *
@@ -1550,7 +1550,7 @@ mcp_error_response_get_id (McpErrorResponse *self)
     return self->id;
 }
 
-/**
+/*
  * mcp_error_response_set_id_is_number:
  * @self: an #McpErrorResponse
  * @is_number: whether to serialise the id as a JSON number
@@ -1568,7 +1568,7 @@ mcp_error_response_set_id_is_number (McpErrorResponse *self,
 }
 
 
-/**
+/*
  * mcp_error_response_get_code:
  * @self: an #McpErrorResponse
  *
@@ -1584,7 +1584,7 @@ mcp_error_response_get_code (McpErrorResponse *self)
     return self->code;
 }
 
-/**
+/*
  * mcp_error_response_get_error_message:
  * @self: an #McpErrorResponse
  *
@@ -1600,7 +1600,7 @@ mcp_error_response_get_error_message (McpErrorResponse *self)
     return self->message;
 }
 
-/**
+/*
  * mcp_error_response_get_data:
  * @self: an #McpErrorResponse
  *
@@ -1616,7 +1616,7 @@ mcp_error_response_get_data (McpErrorResponse *self)
     return self->data;
 }
 
-/**
+/*
  * mcp_error_response_set_data:
  * @self: an #McpErrorResponse
  * @data: (nullable): the error data
@@ -1636,7 +1636,7 @@ mcp_error_response_set_data (McpErrorResponse *self,
     self->data = (data != NULL) ? json_node_copy (data) : NULL;
 }
 
-/**
+/*
  * mcp_error_response_to_gerror:
  * @self: an #McpErrorResponse
  *
@@ -1824,7 +1824,7 @@ mcp_notification_init (McpNotification *self)
     priv->message_type = MCP_MESSAGE_TYPE_NOTIFICATION;
 }
 
-/**
+/*
  * mcp_notification_new:
  * @method: the method name
  *
@@ -1842,7 +1842,7 @@ mcp_notification_new (const gchar *method)
                          NULL);
 }
 
-/**
+/*
  * mcp_notification_new_with_params:
  * @method: the method name
  * @params: (nullable) (transfer full): the notification parameters
@@ -1871,7 +1871,7 @@ mcp_notification_new_with_params (const gchar *method,
     return notification;
 }
 
-/**
+/*
  * mcp_notification_get_method:
  * @self: an #McpNotification
  *
@@ -1887,7 +1887,7 @@ mcp_notification_get_method (McpNotification *self)
     return self->method;
 }
 
-/**
+/*
  * mcp_notification_get_params:
  * @self: an #McpNotification
  *
@@ -1903,7 +1903,7 @@ mcp_notification_get_params (McpNotification *self)
     return self->params;
 }
 
-/**
+/*
  * mcp_notification_set_params:
  * @self: an #McpNotification
  * @params: (nullable) (transfer full): the parameters

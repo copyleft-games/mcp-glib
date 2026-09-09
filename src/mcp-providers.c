@@ -21,6 +21,10 @@ struct _McpToolResult
     JsonArray *content;
 };
 
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpToolResult, mcp_tool_result,
+	mcp_tool_result_ref, mcp_tool_result_unref)
+
 McpToolResult *
 mcp_tool_result_new (gboolean is_error)
 {
@@ -184,6 +188,10 @@ struct _McpResourceContents
     gboolean is_text;
 };
 
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpResourceContents, mcp_resource_contents,
+	mcp_resource_contents_ref, mcp_resource_contents_unref)
+
 McpResourceContents *
 mcp_resource_contents_new_text (const gchar *uri,
                                 const gchar *text,
@@ -331,6 +339,10 @@ struct _McpPromptMessage
     McpRole    role;
     JsonArray *content;
 };
+
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpPromptMessage, mcp_prompt_message,
+	mcp_prompt_message_ref, mcp_prompt_message_unref)
 
 McpPromptMessage *
 mcp_prompt_message_new (McpRole role)
@@ -489,6 +501,10 @@ struct _McpPromptResult
     gchar  *description;
     GList  *messages;
 };
+
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpPromptResult, mcp_prompt_result,
+	mcp_prompt_result_ref, mcp_prompt_result_unref)
 
 McpPromptResult *
 mcp_prompt_result_new (const gchar *description)

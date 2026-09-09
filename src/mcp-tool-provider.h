@@ -31,6 +31,17 @@ G_DECLARE_INTERFACE (McpToolProvider, mcp_tool_provider, MCP, TOOL_PROVIDER, GOb
  */
 typedef struct _McpToolResult McpToolResult;
 
+#define MCP_TYPE_TOOL_RESULT (mcp_tool_result_get_type ())
+
+/**
+ * mcp_tool_result_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpToolResult.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_tool_result_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_tool_result_new:
  * @is_error: whether the result represents an error
@@ -160,8 +171,8 @@ struct _McpToolProviderInterface
      * @name: the tool name
      * @arguments: (nullable): the arguments as a JSON object
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Calls a tool asynchronously.
      */
@@ -206,8 +217,8 @@ GList *mcp_tool_provider_list_tools (McpToolProvider *self);
  * @name: the tool name
  * @arguments: (nullable): the arguments as a JSON object
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Calls a tool asynchronously.
  */

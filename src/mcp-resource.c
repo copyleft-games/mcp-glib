@@ -218,7 +218,7 @@ mcp_resource_init (McpResource *self)
     priv->size = -1;
 }
 
-/**
+/*
  * mcp_resource_new:
  * @uri: the resource URI
  * @name: the resource name
@@ -237,7 +237,7 @@ mcp_resource_new (const gchar *uri,
                          NULL);
 }
 
-/**
+/*
  * mcp_resource_get_uri:
  * @self: an #McpResource
  *
@@ -256,7 +256,7 @@ mcp_resource_get_uri (McpResource *self)
     return priv->uri;
 }
 
-/**
+/*
  * mcp_resource_set_uri:
  * @self: an #McpResource
  * @uri: the resource URI
@@ -271,7 +271,7 @@ mcp_resource_set_uri (McpResource *self,
     g_object_set (self, "uri", uri, NULL);
 }
 
-/**
+/*
  * mcp_resource_get_name:
  * @self: an #McpResource
  *
@@ -290,7 +290,7 @@ mcp_resource_get_name (McpResource *self)
     return priv->name;
 }
 
-/**
+/*
  * mcp_resource_set_name:
  * @self: an #McpResource
  * @name: the resource name
@@ -305,7 +305,7 @@ mcp_resource_set_name (McpResource *self,
     g_object_set (self, "name", name, NULL);
 }
 
-/**
+/*
  * mcp_resource_get_title:
  * @self: an #McpResource
  *
@@ -324,7 +324,7 @@ mcp_resource_get_title (McpResource *self)
     return priv->title;
 }
 
-/**
+/*
  * mcp_resource_set_title:
  * @self: an #McpResource
  * @title: (nullable): the resource title
@@ -339,7 +339,7 @@ mcp_resource_set_title (McpResource *self,
     g_object_set (self, "title", title, NULL);
 }
 
-/**
+/*
  * mcp_resource_get_description:
  * @self: an #McpResource
  *
@@ -358,7 +358,7 @@ mcp_resource_get_description (McpResource *self)
     return priv->description;
 }
 
-/**
+/*
  * mcp_resource_set_description:
  * @self: an #McpResource
  * @description: (nullable): the resource description
@@ -373,7 +373,7 @@ mcp_resource_set_description (McpResource *self,
     g_object_set (self, "description", description, NULL);
 }
 
-/**
+/*
  * mcp_resource_get_mime_type:
  * @self: an #McpResource
  *
@@ -392,7 +392,7 @@ mcp_resource_get_mime_type (McpResource *self)
     return priv->mime_type;
 }
 
-/**
+/*
  * mcp_resource_set_mime_type:
  * @self: an #McpResource
  * @mime_type: (nullable): the MIME type
@@ -407,7 +407,7 @@ mcp_resource_set_mime_type (McpResource *self,
     g_object_set (self, "mime-type", mime_type, NULL);
 }
 
-/**
+/*
  * mcp_resource_get_size:
  * @self: an #McpResource
  *
@@ -426,7 +426,7 @@ mcp_resource_get_size (McpResource *self)
     return priv->size;
 }
 
-/**
+/*
  * mcp_resource_set_size:
  * @self: an #McpResource
  * @size: the size in bytes, or -1 if unknown
@@ -441,7 +441,7 @@ mcp_resource_set_size (McpResource *self,
     g_object_set (self, "size", size, NULL);
 }
 
-/**
+/*
  * mcp_resource_to_json:
  * @self: an #McpResource
  *
@@ -508,7 +508,7 @@ mcp_resource_to_json (McpResource *self)
     return result;
 }
 
-/**
+/*
  * mcp_resource_new_from_json:
  * @node: a #JsonNode containing a resource definition
  * @error: (nullable): return location for a #GError
@@ -766,7 +766,7 @@ mcp_resource_template_init (McpResourceTemplate *self)
     /* No default initialization needed */
 }
 
-/**
+/*
  * mcp_resource_template_new:
  * @uri_template: the URI template (RFC 6570)
  * @name: the template name
@@ -785,7 +785,7 @@ mcp_resource_template_new (const gchar *uri_template,
                          NULL);
 }
 
-/**
+/*
  * mcp_resource_template_get_uri_template:
  * @self: an #McpResourceTemplate
  *
@@ -804,7 +804,7 @@ mcp_resource_template_get_uri_template (McpResourceTemplate *self)
     return priv->uri_template;
 }
 
-/**
+/*
  * mcp_resource_template_set_uri_template:
  * @self: an #McpResourceTemplate
  * @uri_template: the URI template
@@ -819,7 +819,7 @@ mcp_resource_template_set_uri_template (McpResourceTemplate *self,
     g_object_set (self, "uri-template", uri_template, NULL);
 }
 
-/**
+/*
  * mcp_resource_template_get_name:
  * @self: an #McpResourceTemplate
  *
@@ -838,7 +838,7 @@ mcp_resource_template_get_name (McpResourceTemplate *self)
     return priv->name;
 }
 
-/**
+/*
  * mcp_resource_template_set_name:
  * @self: an #McpResourceTemplate
  * @name: the template name
@@ -853,7 +853,7 @@ mcp_resource_template_set_name (McpResourceTemplate *self,
     g_object_set (self, "name", name, NULL);
 }
 
-/**
+/*
  * mcp_resource_template_get_title:
  * @self: an #McpResourceTemplate
  *
@@ -872,7 +872,7 @@ mcp_resource_template_get_title (McpResourceTemplate *self)
     return priv->title;
 }
 
-/**
+/*
  * mcp_resource_template_set_title:
  * @self: an #McpResourceTemplate
  * @title: (nullable): the template title
@@ -887,7 +887,7 @@ mcp_resource_template_set_title (McpResourceTemplate *self,
     g_object_set (self, "title", title, NULL);
 }
 
-/**
+/*
  * mcp_resource_template_get_description:
  * @self: an #McpResourceTemplate
  *
@@ -906,7 +906,7 @@ mcp_resource_template_get_description (McpResourceTemplate *self)
     return priv->description;
 }
 
-/**
+/*
  * mcp_resource_template_set_description:
  * @self: an #McpResourceTemplate
  * @description: (nullable): the template description
@@ -921,7 +921,7 @@ mcp_resource_template_set_description (McpResourceTemplate *self,
     g_object_set (self, "description", description, NULL);
 }
 
-/**
+/*
  * mcp_resource_template_get_mime_type:
  * @self: an #McpResourceTemplate
  *
@@ -940,7 +940,7 @@ mcp_resource_template_get_mime_type (McpResourceTemplate *self)
     return priv->mime_type;
 }
 
-/**
+/*
  * mcp_resource_template_set_mime_type:
  * @self: an #McpResourceTemplate
  * @mime_type: (nullable): the MIME type
@@ -955,7 +955,7 @@ mcp_resource_template_set_mime_type (McpResourceTemplate *self,
     g_object_set (self, "mime-type", mime_type, NULL);
 }
 
-/**
+/*
  * mcp_resource_template_to_json:
  * @self: an #McpResourceTemplate
  *
@@ -1015,7 +1015,7 @@ mcp_resource_template_to_json (McpResourceTemplate *self)
     return result;
 }
 
-/**
+/*
  * mcp_resource_template_new_from_json:
  * @node: a #JsonNode containing a template definition
  * @error: (nullable): return location for a #GError

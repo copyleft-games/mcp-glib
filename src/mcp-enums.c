@@ -171,7 +171,7 @@ mcp_message_type_get_type (void)
  * String conversion utilities
  */
 
-/**
+/*
  * mcp_log_level_to_string:
  * @level: a #McpLogLevel
  *
@@ -205,7 +205,7 @@ mcp_log_level_to_string (McpLogLevel level)
     }
 }
 
-/**
+/*
  * mcp_log_level_from_string:
  * @str: a string log level name
  *
@@ -239,7 +239,7 @@ mcp_log_level_from_string (const gchar *str)
     return MCP_LOG_LEVEL_INFO;
 }
 
-/**
+/*
  * mcp_role_to_string:
  * @role: a #McpRole
  *
@@ -261,7 +261,7 @@ mcp_role_to_string (McpRole role)
     }
 }
 
-/**
+/*
  * mcp_role_from_string:
  * @str: a string role name
  *
@@ -283,7 +283,7 @@ mcp_role_from_string (const gchar *str)
     return MCP_ROLE_USER;
 }
 
-/**
+/*
  * mcp_task_status_to_string:
  * @status: a #McpTaskStatus
  *
@@ -311,7 +311,7 @@ mcp_task_status_to_string (McpTaskStatus status)
     }
 }
 
-/**
+/*
  * mcp_task_status_from_string:
  * @str: a string task status name
  *

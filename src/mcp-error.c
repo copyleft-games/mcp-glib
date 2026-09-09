@@ -19,7 +19,7 @@ mcp_error_quark (void)
     return g_quark_from_static_string ("mcp-error-quark");
 }
 
-/**
+/*
  * mcp_error_code_is_json_rpc:
  * @code: an #McpErrorCode
  *
@@ -34,7 +34,7 @@ mcp_error_code_is_json_rpc (McpErrorCode code)
     return (code <= -32000 && code >= -32768);
 }
 
-/**
+/*
  * mcp_error_code_to_json_rpc_code:
  * @code: an #McpErrorCode
  *
@@ -77,7 +77,7 @@ mcp_error_code_to_json_rpc_code (McpErrorCode code)
     }
 }
 
-/**
+/*
  * mcp_error_code_from_json_rpc_code:
  * @json_rpc_code: a JSON-RPC error code
  *
@@ -116,4 +116,41 @@ mcp_error_code_from_json_rpc_code (gint json_rpc_code)
         }
         return MCP_ERROR_INTERNAL_ERROR;
     }
+}
+
+/* Register the existing error codes so GIR pairs the enum with its domain. */
+GType
+mcp_error_get_type (void)
+{
+	static gsize type_id = 0;
+	static const GEnumValue values[] = {
+		{ MCP_ERROR_PARSE_ERROR, "MCP_ERROR_PARSE_ERROR", "parse-error" },
+		{ MCP_ERROR_INVALID_REQUEST, "MCP_ERROR_INVALID_REQUEST", "invalid-request" },
+		{ MCP_ERROR_METHOD_NOT_FOUND, "MCP_ERROR_METHOD_NOT_FOUND", "method-not-found" },
+		{ MCP_ERROR_INVALID_PARAMS, "MCP_ERROR_INVALID_PARAMS", "invalid-params" },
+		{ MCP_ERROR_INTERNAL_ERROR, "MCP_ERROR_INTERNAL_ERROR", "internal-error" },
+		{ MCP_ERROR_CONNECTION_CLOSED, "MCP_ERROR_CONNECTION_CLOSED", "connection-closed" },
+		{ MCP_ERROR_TRANSPORT_ERROR, "MCP_ERROR_TRANSPORT_ERROR", "transport-error" },
+		{ MCP_ERROR_TIMEOUT, "MCP_ERROR_TIMEOUT", "timeout" },
+		{ MCP_ERROR_URL_ELICITATION_REQUIRED, "MCP_ERROR_URL_ELICITATION_REQUIRED", "url-elicitation-required" },
+		{ MCP_ERROR_PROTOCOL_VERSION_MISMATCH, "MCP_ERROR_PROTOCOL_VERSION_MISMATCH", "protocol-version-mismatch" },
+		{ MCP_ERROR_NOT_INITIALIZED, "MCP_ERROR_NOT_INITIALIZED", "not-initialized" },
+		{ MCP_ERROR_ALREADY_INITIALIZED, "MCP_ERROR_ALREADY_INITIALIZED", "already-initialized" },
+		{ MCP_ERROR_TOOL_NOT_FOUND, "MCP_ERROR_TOOL_NOT_FOUND", "tool-not-found" },
+		{ MCP_ERROR_RESOURCE_NOT_FOUND, "MCP_ERROR_RESOURCE_NOT_FOUND", "resource-not-found" },
+		{ MCP_ERROR_PROMPT_NOT_FOUND, "MCP_ERROR_PROMPT_NOT_FOUND", "prompt-not-found" },
+		{ MCP_ERROR_TASK_NOT_FOUND, "MCP_ERROR_TASK_NOT_FOUND", "task-not-found" },
+		{ MCP_ERROR_CAPABILITY_NOT_SUPPORTED, "MCP_ERROR_CAPABILITY_NOT_SUPPORTED", "capability-not-supported" },
+		{ 0, NULL, NULL }
+	};
+
+	if (g_once_init_enter (&type_id))
+	{
+		GType registered_type;
+
+		registered_type = g_enum_register_static ("McpErrorCode", values);
+		g_once_init_leave (&type_id, registered_type);
+	}
+
+	return (GType) type_id;
 }

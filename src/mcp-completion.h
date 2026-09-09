@@ -25,6 +25,17 @@ G_BEGIN_DECLS
  */
 typedef struct _McpCompletionResult McpCompletionResult;
 
+#define MCP_TYPE_COMPLETION_RESULT (mcp_completion_result_get_type ())
+
+/**
+ * mcp_completion_result_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpCompletionResult.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_completion_result_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_completion_result_new:
  *

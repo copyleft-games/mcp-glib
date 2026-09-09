@@ -859,7 +859,7 @@ mcp_websocket_server_transport_init (McpWebSocketServerTransport *self)
 
 /* Public API */
 
-/**
+/*
  * mcp_websocket_server_transport_new:
  * @port: the port to listen on (0 = auto-assign)
  *
@@ -878,7 +878,7 @@ mcp_websocket_server_transport_new (guint port)
     return self;
 }
 
-/**
+/*
  * mcp_websocket_server_transport_new_full:
  * @host: (nullable): the host/address to bind to
  * @port: the port to listen on

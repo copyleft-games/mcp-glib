@@ -208,8 +208,8 @@ McpTransport *mcp_server_get_transport (McpServer *self);
  * mcp_server_start_async:
  * @self: an #McpServer
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Starts the server and waits for initialization.
  */
@@ -259,9 +259,9 @@ void mcp_server_stop (McpServer *self);
  * mcp_server_add_tool:
  * @self: an #McpServer
  * @tool: (transfer none): the #McpTool to add
- * @handler: (scope notified) (nullable): the handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Adds a tool to the server.
  */
@@ -330,9 +330,9 @@ McpToolResult *mcp_server_invoke_tool (McpServer    *self,
  * mcp_server_add_resource:
  * @self: an #McpServer
  * @resource: (transfer none): the #McpResource to add
- * @handler: (scope notified) (nullable): the handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Adds a resource to the server.
  */
@@ -346,9 +346,9 @@ void mcp_server_add_resource (McpServer          *self,
  * mcp_server_add_resource_template:
  * @self: an #McpServer
  * @templ: (transfer none): the #McpResourceTemplate to add
- * @handler: (scope notified) (nullable): the handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Adds a resource template to the server.
  */
@@ -406,9 +406,9 @@ void mcp_server_notify_resource_updated (McpServer   *self,
  * mcp_server_add_prompt:
  * @self: an #McpServer
  * @prompt: (transfer none): the #McpPrompt to add
- * @handler: (scope notified) (nullable): the handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Adds a prompt to the server.
  */
@@ -485,7 +485,7 @@ void mcp_server_emit_log (McpServer   *self,
  * @self: an #McpServer
  * @token: the progress token
  * @progress: the current progress (0.0 to 1.0)
- * @total: (nullable): the total amount, or -1 if unknown
+ * @total: the total amount, or -1 if unknown
  *
  * Sends a progress notification for a long-running operation.
  */
@@ -500,9 +500,9 @@ void mcp_server_send_progress (McpServer   *self,
  * mcp_server_add_async_tool:
  * @self: an #McpServer
  * @tool: (transfer none): the #McpTool to add
- * @handler: (scope notified) (nullable): the async handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the async handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Adds a tool with asynchronous execution support (Tasks API).
  * The tool will be handled using tasks for long-running operations.
@@ -615,8 +615,8 @@ void mcp_server_notify_task_status (McpServer *self,
  * @system_prompt: (nullable): system prompt for the LLM
  * @max_tokens: maximum tokens to generate
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Requests the client to perform LLM sampling.
  * This is a server-to-client request (role reversal).
@@ -650,8 +650,8 @@ McpSamplingResult *mcp_server_request_sampling_finish (McpServer     *self,
  * mcp_server_list_roots_async:
  * @self: an #McpServer
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Requests the list of roots from the client.
  * This is a server-to-client request (role reversal).
@@ -680,9 +680,9 @@ GList *mcp_server_list_roots_finish (McpServer     *self,
 /**
  * mcp_server_set_completion_handler:
  * @self: an #McpServer
- * @handler: (scope notified) (nullable): the handler function
- * @user_data: (closure): user data for @handler
- * @destroy: (destroy user_data): destroy notify for @user_data
+ * @handler: (destroy destroy) (closure user_data) (scope notified) (nullable): the handler function
+ * @user_data: user data for @handler
+ * @destroy: destroy notify for @user_data
  *
  * Sets the handler for completion requests.
  * The completion handler provides autocomplete suggestions for

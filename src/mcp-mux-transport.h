@@ -63,9 +63,9 @@ McpMuxTransport *mcp_mux_transport_new (GMainContext *context);
 /**
  * mcp_mux_transport_set_send_callback:
  * @self: an #McpMuxTransport
- * @callback: (scope notified) (nullable): the callback to invoke when
+ * @callback: (closure user_data) (scope notified) (nullable): the callback to invoke when
  *   the transport wants to send a frame, or %NULL to unset
- * @user_data: (closure): user data for @callback
+ * @user_data: user data for @callback
  * @destroy: (nullable): destroy notify for @user_data
  *
  * Registers the outbound dispatch callback.  Replacing an existing

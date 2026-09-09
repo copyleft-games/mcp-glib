@@ -209,7 +209,7 @@ mcp_session_init (McpSession *self)
                                                      g_free, g_object_unref);
 }
 
-/**
+/*
  * mcp_session_get_state:
  * @self: an #McpSession
  *
@@ -251,7 +251,7 @@ mcp_session_set_state (McpSession      *self,
     }
 }
 
-/**
+/*
  * mcp_session_get_protocol_version:
  * @self: an #McpSession
  *
@@ -287,7 +287,7 @@ mcp_session_set_protocol_version (McpSession  *self,
     g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_PROTOCOL_VERSION]);
 }
 
-/**
+/*
  * mcp_session_get_local_implementation:
  * @self: an #McpSession
  *
@@ -306,7 +306,7 @@ mcp_session_get_local_implementation (McpSession *self)
     return priv->local_impl;
 }
 
-/**
+/*
  * mcp_session_set_local_implementation:
  * @self: an #McpSession
  * @impl: (transfer none): the implementation info
@@ -328,7 +328,7 @@ mcp_session_set_local_implementation (McpSession        *self,
     g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_LOCAL_IMPLEMENTATION]);
 }
 
-/**
+/*
  * mcp_session_get_remote_implementation:
  * @self: an #McpSession
  *
@@ -367,7 +367,7 @@ mcp_session_set_remote_implementation (McpSession        *self,
     g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_REMOTE_IMPLEMENTATION]);
 }
 
-/**
+/*
  * mcp_session_generate_request_id:
  * @self: an #McpSession
  *
@@ -389,7 +389,7 @@ mcp_session_generate_request_id (McpSession *self)
     return g_strdup_printf ("%" G_GUINT64_FORMAT, id);
 }
 
-/**
+/*
  * mcp_session_has_pending_request:
  * @self: an #McpSession
  * @request_id: the request ID to check
@@ -411,7 +411,7 @@ mcp_session_has_pending_request (McpSession  *self,
     return g_hash_table_contains (priv->pending_requests, request_id);
 }
 
-/**
+/*
  * mcp_session_get_pending_request_count:
  * @self: an #McpSession
  *

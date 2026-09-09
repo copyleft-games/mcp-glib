@@ -31,6 +31,17 @@ G_DECLARE_INTERFACE (McpResourceProvider, mcp_resource_provider, MCP, RESOURCE_P
  */
 typedef struct _McpResourceContents McpResourceContents;
 
+#define MCP_TYPE_RESOURCE_CONTENTS (mcp_resource_contents_get_type ())
+
+/**
+ * mcp_resource_contents_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpResourceContents.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_resource_contents_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_resource_contents_new_text:
  * @uri: the resource URI
@@ -182,8 +193,8 @@ struct _McpResourceProviderInterface
      * @self: an #McpResourceProvider
      * @uri: the resource URI
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Reads a resource asynchronously.
      */
@@ -265,8 +276,8 @@ GList *mcp_resource_provider_list_resource_templates (McpResourceProvider *self)
  * @self: an #McpResourceProvider
  * @uri: the resource URI
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Reads a resource asynchronously.
  */

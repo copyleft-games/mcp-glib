@@ -14,7 +14,11 @@ struct _McpRoot
     gchar *name;
 };
 
-/**
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpRoot, mcp_root,
+	mcp_root_ref, mcp_root_unref)
+
+/*
  * mcp_root_new:
  * @uri: the root URI (must use file:// scheme)
  *
@@ -36,7 +40,7 @@ mcp_root_new (const gchar *uri)
     return root;
 }
 
-/**
+/*
  * mcp_root_ref:
  * @root: a #McpRoot
  *
@@ -53,7 +57,7 @@ mcp_root_ref (McpRoot *root)
     return root;
 }
 
-/**
+/*
  * mcp_root_unref:
  * @root: a #McpRoot
  *
@@ -72,7 +76,7 @@ mcp_root_unref (McpRoot *root)
     }
 }
 
-/**
+/*
  * mcp_root_get_uri:
  * @root: a #McpRoot
  *
@@ -87,7 +91,7 @@ mcp_root_get_uri (McpRoot *root)
     return root->uri;
 }
 
-/**
+/*
  * mcp_root_set_uri:
  * @root: a #McpRoot
  * @uri: the root URI
@@ -105,7 +109,7 @@ mcp_root_set_uri (McpRoot     *root,
     root->uri = g_strdup (uri);
 }
 
-/**
+/*
  * mcp_root_get_name:
  * @root: a #McpRoot
  *
@@ -120,7 +124,7 @@ mcp_root_get_name (McpRoot *root)
     return root->name;
 }
 
-/**
+/*
  * mcp_root_set_name:
  * @root: a #McpRoot
  * @name: (nullable): the name
@@ -137,7 +141,7 @@ mcp_root_set_name (McpRoot     *root,
     root->name = g_strdup (name);
 }
 
-/**
+/*
  * mcp_root_to_json:
  * @root: a #McpRoot
  *
@@ -172,7 +176,7 @@ mcp_root_to_json (McpRoot *root)
     return node;
 }
 
-/**
+/*
  * mcp_root_new_from_json:
  * @node: a #JsonNode containing a root
  * @error: (nullable): return location for a #GError

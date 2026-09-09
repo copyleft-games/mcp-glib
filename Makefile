@@ -486,6 +486,7 @@ $(BUILDDIR)/$(GIR_FILE): $(BUILDDIR)/$(LIB_SHARED) $(HDRS) $(SRCS)
 		--pkg=libdex-1 \
 		--output=$@ \
 		--warn-all \
+		--warn-error \
 		-I./$(SRCDIR) \
 		$(HDRS) $(SRCS)
 
@@ -601,3 +602,10 @@ endif
 	@echo "=== Flags ==="
 	@echo "CFLAGS:          $(CFLAGS)"
 	@echo "LDFLAGS:         $(LDFLAGS)"
+
+# Explicit scanner regression alongside the portable C unit-test target.
+.PHONY: tests test-gir
+tests: test
+
+test-gir:
+	bash tests/test-gir.sh

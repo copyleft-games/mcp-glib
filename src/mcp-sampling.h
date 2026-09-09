@@ -32,6 +32,17 @@ G_BEGIN_DECLS
  */
 typedef struct _McpSamplingMessage McpSamplingMessage;
 
+#define MCP_TYPE_SAMPLING_MESSAGE (mcp_sampling_message_get_type ())
+
+/**
+ * mcp_sampling_message_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpSamplingMessage.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_sampling_message_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_sampling_message_new:
  * @role: the message role (user or assistant)
@@ -137,6 +148,17 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (McpSamplingMessage, mcp_sampling_message_unref)
  * Contains model hints and priority weights for cost, speed, and intelligence.
  */
 typedef struct _McpModelPreferences McpModelPreferences;
+
+#define MCP_TYPE_MODEL_PREFERENCES (mcp_model_preferences_get_type ())
+
+/**
+ * mcp_model_preferences_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpModelPreferences.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_model_preferences_get_type (void) G_GNUC_CONST;
 
 /**
  * mcp_model_preferences_new:
@@ -280,6 +302,17 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (McpModelPreferences, mcp_model_preferences_unref)
  * Contains the generated message content, model used, and stop reason.
  */
 typedef struct _McpSamplingResult McpSamplingResult;
+
+#define MCP_TYPE_SAMPLING_RESULT (mcp_sampling_result_get_type ())
+
+/**
+ * mcp_sampling_result_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpSamplingResult.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_sampling_result_get_type (void) G_GNUC_CONST;
 
 /**
  * mcp_sampling_result_new:

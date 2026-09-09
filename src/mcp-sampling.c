@@ -18,7 +18,11 @@ struct _McpSamplingMessage
     JsonArray *content;
 };
 
-/**
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpSamplingMessage, mcp_sampling_message,
+	mcp_sampling_message_ref, mcp_sampling_message_unref)
+
+/*
  * mcp_sampling_message_new:
  * @role: the message role
  *
@@ -39,7 +43,7 @@ mcp_sampling_message_new (McpRole role)
     return message;
 }
 
-/**
+/*
  * mcp_sampling_message_ref:
  * @message: a #McpSamplingMessage
  *
@@ -56,7 +60,7 @@ mcp_sampling_message_ref (McpSamplingMessage *message)
     return message;
 }
 
-/**
+/*
  * mcp_sampling_message_unref:
  * @message: a #McpSamplingMessage
  *
@@ -74,7 +78,7 @@ mcp_sampling_message_unref (McpSamplingMessage *message)
     }
 }
 
-/**
+/*
  * mcp_sampling_message_get_role:
  * @message: a #McpSamplingMessage
  *
@@ -89,7 +93,7 @@ mcp_sampling_message_get_role (McpSamplingMessage *message)
     return message->role;
 }
 
-/**
+/*
  * mcp_sampling_message_add_text:
  * @message: a #McpSamplingMessage
  * @text: the text content
@@ -111,7 +115,7 @@ mcp_sampling_message_add_text (McpSamplingMessage *message,
     json_array_add_object_element (message->content, item);
 }
 
-/**
+/*
  * mcp_sampling_message_add_image:
  * @message: a #McpSamplingMessage
  * @data: the base64-encoded image data
@@ -137,7 +141,7 @@ mcp_sampling_message_add_image (McpSamplingMessage *message,
     json_array_add_object_element (message->content, item);
 }
 
-/**
+/*
  * mcp_sampling_message_get_content:
  * @message: a #McpSamplingMessage
  *
@@ -152,7 +156,7 @@ mcp_sampling_message_get_content (McpSamplingMessage *message)
     return message->content;
 }
 
-/**
+/*
  * mcp_sampling_message_to_json:
  * @message: a #McpSamplingMessage
  *
@@ -191,7 +195,7 @@ mcp_sampling_message_to_json (McpSamplingMessage *message)
     return node;
 }
 
-/**
+/*
  * mcp_sampling_message_new_from_json:
  * @node: a #JsonNode containing a message
  * @error: (nullable): return location for a #GError
@@ -289,7 +293,11 @@ struct _McpModelPreferences
     gdouble  intelligence_priority; /* 0.0 to 1.0 */
 };
 
-/**
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpModelPreferences, mcp_model_preferences,
+	mcp_model_preferences_ref, mcp_model_preferences_unref)
+
+/*
  * mcp_model_preferences_new:
  *
  * Creates a new model preferences object with default values.
@@ -311,7 +319,7 @@ mcp_model_preferences_new (void)
     return prefs;
 }
 
-/**
+/*
  * mcp_model_preferences_ref:
  * @prefs: a #McpModelPreferences
  *
@@ -328,7 +336,7 @@ mcp_model_preferences_ref (McpModelPreferences *prefs)
     return prefs;
 }
 
-/**
+/*
  * mcp_model_preferences_unref:
  * @prefs: a #McpModelPreferences
  *
@@ -346,7 +354,7 @@ mcp_model_preferences_unref (McpModelPreferences *prefs)
     }
 }
 
-/**
+/*
  * mcp_model_preferences_add_hint:
  * @prefs: a #McpModelPreferences
  * @name: the model name hint
@@ -363,7 +371,7 @@ mcp_model_preferences_add_hint (McpModelPreferences *prefs,
     prefs->hints = g_list_append (prefs->hints, g_strdup (name));
 }
 
-/**
+/*
  * mcp_model_preferences_get_hints:
  * @prefs: a #McpModelPreferences
  *
@@ -378,7 +386,7 @@ mcp_model_preferences_get_hints (McpModelPreferences *prefs)
     return prefs->hints;
 }
 
-/**
+/*
  * mcp_model_preferences_set_cost_priority:
  * @prefs: a #McpModelPreferences
  * @priority: the priority (0.0 to 1.0)
@@ -393,7 +401,7 @@ mcp_model_preferences_set_cost_priority (McpModelPreferences *prefs,
     prefs->cost_priority = CLAMP (priority, 0.0, 1.0);
 }
 
-/**
+/*
  * mcp_model_preferences_get_cost_priority:
  * @prefs: a #McpModelPreferences
  *
@@ -408,7 +416,7 @@ mcp_model_preferences_get_cost_priority (McpModelPreferences *prefs)
     return prefs->cost_priority;
 }
 
-/**
+/*
  * mcp_model_preferences_set_speed_priority:
  * @prefs: a #McpModelPreferences
  * @priority: the priority (0.0 to 1.0)
@@ -423,7 +431,7 @@ mcp_model_preferences_set_speed_priority (McpModelPreferences *prefs,
     prefs->speed_priority = CLAMP (priority, 0.0, 1.0);
 }
 
-/**
+/*
  * mcp_model_preferences_get_speed_priority:
  * @prefs: a #McpModelPreferences
  *
@@ -438,7 +446,7 @@ mcp_model_preferences_get_speed_priority (McpModelPreferences *prefs)
     return prefs->speed_priority;
 }
 
-/**
+/*
  * mcp_model_preferences_set_intelligence_priority:
  * @prefs: a #McpModelPreferences
  * @priority: the priority (0.0 to 1.0)
@@ -453,7 +461,7 @@ mcp_model_preferences_set_intelligence_priority (McpModelPreferences *prefs,
     prefs->intelligence_priority = CLAMP (priority, 0.0, 1.0);
 }
 
-/**
+/*
  * mcp_model_preferences_get_intelligence_priority:
  * @prefs: a #McpModelPreferences
  *
@@ -468,7 +476,7 @@ mcp_model_preferences_get_intelligence_priority (McpModelPreferences *prefs)
     return prefs->intelligence_priority;
 }
 
-/**
+/*
  * mcp_model_preferences_to_json:
  * @prefs: a #McpModelPreferences
  *
@@ -529,7 +537,7 @@ mcp_model_preferences_to_json (McpModelPreferences *prefs)
     return node;
 }
 
-/**
+/*
  * mcp_model_preferences_new_from_json:
  * @node: a #JsonNode containing preferences
  * @error: (nullable): return location for a #GError
@@ -599,7 +607,11 @@ struct _McpSamplingResult
     gchar   *stop_reason;
 };
 
-/**
+/* Boxed copies own a reference and release it through the public API. */
+G_DEFINE_BOXED_TYPE (McpSamplingResult, mcp_sampling_result,
+	mcp_sampling_result_ref, mcp_sampling_result_unref)
+
+/*
  * mcp_sampling_result_new:
  * @role: the message role
  *
@@ -619,7 +631,7 @@ mcp_sampling_result_new (McpRole role)
     return result;
 }
 
-/**
+/*
  * mcp_sampling_result_ref:
  * @result: a #McpSamplingResult
  *
@@ -636,7 +648,7 @@ mcp_sampling_result_ref (McpSamplingResult *result)
     return result;
 }
 
-/**
+/*
  * mcp_sampling_result_unref:
  * @result: a #McpSamplingResult
  *
@@ -656,7 +668,7 @@ mcp_sampling_result_unref (McpSamplingResult *result)
     }
 }
 
-/**
+/*
  * mcp_sampling_result_get_role:
  * @result: a #McpSamplingResult
  *
@@ -671,7 +683,7 @@ mcp_sampling_result_get_role (McpSamplingResult *result)
     return result->role;
 }
 
-/**
+/*
  * mcp_sampling_result_set_text:
  * @result: a #McpSamplingResult
  * @text: the text content
@@ -688,7 +700,7 @@ mcp_sampling_result_set_text (McpSamplingResult *result,
     result->text = g_strdup (text);
 }
 
-/**
+/*
  * mcp_sampling_result_get_text:
  * @result: a #McpSamplingResult
  *
@@ -703,7 +715,7 @@ mcp_sampling_result_get_text (McpSamplingResult *result)
     return result->text;
 }
 
-/**
+/*
  * mcp_sampling_result_set_model:
  * @result: a #McpSamplingResult
  * @model: the model name
@@ -720,7 +732,7 @@ mcp_sampling_result_set_model (McpSamplingResult *result,
     result->model = g_strdup (model);
 }
 
-/**
+/*
  * mcp_sampling_result_get_model:
  * @result: a #McpSamplingResult
  *
@@ -735,7 +747,7 @@ mcp_sampling_result_get_model (McpSamplingResult *result)
     return result->model;
 }
 
-/**
+/*
  * mcp_sampling_result_set_stop_reason:
  * @result: a #McpSamplingResult
  * @reason: the stop reason
@@ -752,7 +764,7 @@ mcp_sampling_result_set_stop_reason (McpSamplingResult *result,
     result->stop_reason = g_strdup (reason);
 }
 
-/**
+/*
  * mcp_sampling_result_get_stop_reason:
  * @result: a #McpSamplingResult
  *
@@ -767,7 +779,7 @@ mcp_sampling_result_get_stop_reason (McpSamplingResult *result)
     return result->stop_reason;
 }
 
-/**
+/*
  * mcp_sampling_result_to_json:
  * @result: a #McpSamplingResult
  *
@@ -817,7 +829,7 @@ mcp_sampling_result_to_json (McpSamplingResult *result)
     return node;
 }
 
-/**
+/*
  * mcp_sampling_result_new_from_json:
  * @node: a #JsonNode containing a result
  * @error: (nullable): return location for a #GError

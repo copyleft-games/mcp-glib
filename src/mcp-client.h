@@ -112,8 +112,8 @@ McpTransport *mcp_client_get_transport (McpClient *self);
  * mcp_client_connect_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Connects to the server and performs initialization.
  */
@@ -140,8 +140,8 @@ gboolean mcp_client_connect_finish (McpClient     *self,
  * mcp_client_disconnect_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Disconnects from the server.
  */
@@ -170,8 +170,8 @@ gboolean mcp_client_disconnect_finish (McpClient     *self,
  * mcp_client_list_tools_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Lists available tools from the server.
  */
@@ -200,8 +200,8 @@ GList *mcp_client_list_tools_finish (McpClient     *self,
  * @name: the tool name
  * @arguments: (nullable): the arguments as a #JsonObject
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Calls a tool on the server.
  */
@@ -232,8 +232,8 @@ McpToolResult *mcp_client_call_tool_finish (McpClient     *self,
  * mcp_client_list_resources_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Lists available resources from the server.
  */
@@ -260,8 +260,8 @@ GList *mcp_client_list_resources_finish (McpClient     *self,
  * mcp_client_list_resource_templates_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Lists available resource templates from the server.
  */
@@ -289,8 +289,8 @@ GList *mcp_client_list_resource_templates_finish (McpClient     *self,
  * @self: an #McpClient
  * @uri: the resource URI
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Reads a resource from the server.
  */
@@ -319,8 +319,8 @@ GList *mcp_client_read_resource_finish (McpClient     *self,
  * @self: an #McpClient
  * @uri: the resource URI
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Subscribes to updates for a resource.
  */
@@ -349,8 +349,8 @@ gboolean mcp_client_subscribe_resource_finish (McpClient     *self,
  * @self: an #McpClient
  * @uri: the resource URI
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Unsubscribes from updates for a resource.
  */
@@ -380,8 +380,8 @@ gboolean mcp_client_unsubscribe_resource_finish (McpClient     *self,
  * mcp_client_list_prompts_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Lists available prompts from the server.
  */
@@ -410,8 +410,8 @@ GList *mcp_client_list_prompts_finish (McpClient     *self,
  * @name: the prompt name
  * @arguments: (nullable): the arguments as a hash table of string to string
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Gets a prompt from the server.
  */
@@ -442,8 +442,8 @@ McpPromptResult *mcp_client_get_prompt_finish (McpClient     *self,
  * mcp_client_ping_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Sends a ping to the server.
  */
@@ -473,8 +473,8 @@ gboolean mcp_client_ping_finish (McpClient     *self,
  * @self: an #McpClient
  * @task_id: the task identifier
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Gets the status of a task from the server.
  */
@@ -503,8 +503,8 @@ McpTask *mcp_client_get_task_finish (McpClient     *self,
  * @self: an #McpClient
  * @task_id: the task identifier
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Gets the result of a completed task from the server.
  */
@@ -533,8 +533,8 @@ McpToolResult *mcp_client_get_task_result_finish (McpClient     *self,
  * @self: an #McpClient
  * @task_id: the task identifier
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Cancels a running task on the server.
  */
@@ -562,8 +562,8 @@ gboolean mcp_client_cancel_task_finish (McpClient     *self,
  * mcp_client_list_tasks_async:
  * @self: an #McpClient
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Lists active tasks on the server.
  */
@@ -666,8 +666,8 @@ void mcp_client_notify_roots_changed (McpClient *self);
  * @argument_name: the argument name being completed
  * @argument_value: the current argument value
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Requests completions from the server.
  */

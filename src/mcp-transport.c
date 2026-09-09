@@ -95,7 +95,7 @@ mcp_transport_default_init (McpTransportInterface *iface)
                       G_TYPE_ERROR);
 }
 
-/**
+/*
  * mcp_transport_get_state:
  * @self: an #McpTransport
  *
@@ -116,7 +116,7 @@ mcp_transport_get_state (McpTransport *self)
     return iface->get_state (self);
 }
 
-/**
+/*
  * mcp_transport_connect_async:
  * @self: an #McpTransport
  * @cancellable: (nullable): a #GCancellable
@@ -141,7 +141,7 @@ mcp_transport_connect_async (McpTransport        *self,
     iface->connect_async (self, cancellable, callback, user_data);
 }
 
-/**
+/*
  * mcp_transport_connect_finish:
  * @self: an #McpTransport
  * @result: the #GAsyncResult
@@ -167,7 +167,7 @@ mcp_transport_connect_finish (McpTransport  *self,
     return iface->connect_finish (self, result, error);
 }
 
-/**
+/*
  * mcp_transport_disconnect_async:
  * @self: an #McpTransport
  * @cancellable: (nullable): a #GCancellable
@@ -192,7 +192,7 @@ mcp_transport_disconnect_async (McpTransport        *self,
     iface->disconnect_async (self, cancellable, callback, user_data);
 }
 
-/**
+/*
  * mcp_transport_disconnect_finish:
  * @self: an #McpTransport
  * @result: the #GAsyncResult
@@ -218,7 +218,7 @@ mcp_transport_disconnect_finish (McpTransport  *self,
     return iface->disconnect_finish (self, result, error);
 }
 
-/**
+/*
  * mcp_transport_send_message_async:
  * @self: an #McpTransport
  * @message: (transfer none): the JSON message to send
@@ -246,7 +246,7 @@ mcp_transport_send_message_async (McpTransport        *self,
     iface->send_message_async (self, message, cancellable, callback, user_data);
 }
 
-/**
+/*
  * mcp_transport_send_message_finish:
  * @self: an #McpTransport
  * @result: the #GAsyncResult
@@ -272,7 +272,7 @@ mcp_transport_send_message_finish (McpTransport  *self,
     return iface->send_message_finish (self, result, error);
 }
 
-/**
+/*
  * mcp_transport_is_connected:
  * @self: an #McpTransport
  *
@@ -292,7 +292,7 @@ mcp_transport_is_connected (McpTransport *self)
  * Helper functions for implementations to emit signals.
  */
 
-/**
+/*
  * mcp_transport_emit_message_received:
  * @self: an #McpTransport
  * @message: (transfer none): the received message
@@ -310,7 +310,7 @@ mcp_transport_emit_message_received (McpTransport *self,
     g_signal_emit (self, signals[SIGNAL_MESSAGE_RECEIVED], 0, message);
 }
 
-/**
+/*
  * mcp_transport_emit_state_changed:
  * @self: an #McpTransport
  * @old_state: the previous state
@@ -329,7 +329,7 @@ mcp_transport_emit_state_changed (McpTransport      *self,
     g_signal_emit (self, signals[SIGNAL_STATE_CHANGED], 0, old_state, new_state);
 }
 
-/**
+/*
  * mcp_transport_emit_error:
  * @self: an #McpTransport
  * @error: (transfer none): the error

@@ -945,7 +945,7 @@ start_read_loop_idle (gpointer user_data)
  * Public constructors.
  */
 
-/**
+/*
  * mcp_stdio_transport_new:
  *
  * Creates a new stdio transport that uses the process's stdin and stdout.
@@ -972,7 +972,7 @@ mcp_stdio_transport_new (void)
     return self;
 }
 
-/**
+/*
  * mcp_stdio_transport_new_with_streams:
  * @input: (transfer none): the input stream to read from
  * @output: (transfer none): the output stream to write to
@@ -999,7 +999,7 @@ mcp_stdio_transport_new_with_streams (GInputStream  *input,
     return self;
 }
 
-/**
+/*
  * mcp_stdio_transport_new_subprocess:
  * @command: (array zero-terminated=1): the command to execute
  * @error: (nullable): return location for a #GError
@@ -1046,7 +1046,7 @@ mcp_stdio_transport_new_subprocess (const gchar * const *command,
     return self;
 }
 
-/**
+/*
  * mcp_stdio_transport_new_subprocess_simple:
  * @command_line: the command line to execute (parsed by shell rules)
  * @error: (nullable): return location for a #GError
@@ -1072,7 +1072,7 @@ mcp_stdio_transport_new_subprocess_simple (const gchar  *command_line,
     return mcp_stdio_transport_new_subprocess ((const gchar * const *)argv, error);
 }
 
-/**
+/*
  * mcp_stdio_transport_get_subprocess:
  * @self: an #McpStdioTransport
  *
@@ -1089,7 +1089,7 @@ mcp_stdio_transport_get_subprocess (McpStdioTransport *self)
     return self->subprocess;
 }
 
-/**
+/*
  * mcp_stdio_transport_get_input_stream:
  * @self: an #McpStdioTransport
  *
@@ -1105,7 +1105,7 @@ mcp_stdio_transport_get_input_stream (McpStdioTransport *self)
     return self->input;
 }
 
-/**
+/*
  * mcp_stdio_transport_get_output_stream:
  * @self: an #McpStdioTransport
  *
@@ -1121,7 +1121,7 @@ mcp_stdio_transport_get_output_stream (McpStdioTransport *self)
     return self->output;
 }
 
-/**
+/*
  * mcp_stdio_transport_get_max_line_bytes:
  * @self: an #McpStdioTransport
  *
@@ -1138,7 +1138,7 @@ mcp_stdio_transport_get_max_line_bytes (McpStdioTransport *self)
     return self->max_line_bytes;
 }
 
-/**
+/*
  * mcp_stdio_transport_set_max_line_bytes:
  * @self: an #McpStdioTransport
  * @max_line_bytes: the cap in bytes, or 0 to remove it

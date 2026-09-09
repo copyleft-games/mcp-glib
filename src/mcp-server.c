@@ -554,7 +554,7 @@ mcp_server_init (McpServer *self)
     self->task_counter = 0;
 }
 
-/**
+/*
  * mcp_server_new:
  * @name: the server name
  * @version: the server version
@@ -2304,7 +2304,7 @@ send_request (McpServer  *self,
 
 /* Tasks API Implementation */
 
-/**
+/*
  * mcp_server_add_async_tool:
  * @self: an #McpServer
  * @tool: (transfer none): the #McpTool to add
@@ -2349,7 +2349,7 @@ mcp_server_add_async_tool (McpServer          *self,
     }
 }
 
-/**
+/*
  * mcp_server_get_task:
  * @self: an #McpServer
  * @task_id: the task identifier
@@ -2368,7 +2368,7 @@ mcp_server_get_task (McpServer   *self,
     return g_hash_table_lookup (self->tasks, task_id);
 }
 
-/**
+/*
  * mcp_server_list_tasks:
  * @self: an #McpServer
  *
@@ -2394,7 +2394,7 @@ mcp_server_list_tasks (McpServer *self)
     return g_list_reverse (list);
 }
 
-/**
+/*
  * mcp_server_notify_task_status:
  * @self: an #McpServer
  * @task: the #McpTask that was updated
@@ -2424,7 +2424,7 @@ mcp_server_notify_task_status (McpServer *self,
     send_notification (self, "notifications/tasks/status", params);
 }
 
-/**
+/*
  * mcp_server_complete_task:
  * @self: an #McpServer
  * @task_id: the task identifier
@@ -2482,7 +2482,7 @@ mcp_server_complete_task (McpServer     *self,
     return TRUE;
 }
 
-/**
+/*
  * mcp_server_fail_task:
  * @self: an #McpServer
  * @task_id: the task identifier
@@ -2500,7 +2500,7 @@ mcp_server_fail_task (McpServer   *self,
     return mcp_server_complete_task (self, task_id, NULL, error_message);
 }
 
-/**
+/*
  * mcp_server_update_task_status:
  * @self: an #McpServer
  * @task_id: the task identifier
@@ -2541,7 +2541,7 @@ mcp_server_update_task_status (McpServer     *self,
     return TRUE;
 }
 
-/**
+/*
  * mcp_server_cancel_task:
  * @self: an #McpServer
  * @task_id: the task identifier
@@ -2724,7 +2724,7 @@ handle_tasks_list (McpServer  *self,
 /* Sampling Request API                                                       */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_server_request_sampling_async:
  * @self: an #McpServer
  * @messages: (element-type McpSamplingMessage): the messages list
@@ -2816,7 +2816,7 @@ mcp_server_request_sampling_async (McpServer           *self,
     g_object_unref (task);
 }
 
-/**
+/*
  * mcp_server_request_sampling_finish:
  * @self: an #McpServer
  * @result: the #GAsyncResult
@@ -2853,7 +2853,7 @@ mcp_server_request_sampling_finish (McpServer     *self,
 /* Roots Request API                                                          */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_server_list_roots_async:
  * @self: an #McpServer
  * @cancellable: (nullable): a #GCancellable
@@ -2892,7 +2892,7 @@ mcp_server_list_roots_async (McpServer           *self,
     g_object_unref (task);
 }
 
-/**
+/*
  * mcp_server_list_roots_finish:
  * @self: an #McpServer
  * @result: the #GAsyncResult
@@ -2968,7 +2968,7 @@ mcp_server_list_roots_finish (McpServer     *self,
 /* Completion Handler API                                                     */
 /* ========================================================================== */
 
-/**
+/*
  * mcp_server_set_completion_handler:
  * @self: an #McpServer
  * @handler: (scope notified) (nullable): the handler function

@@ -351,7 +351,7 @@ on_incoming (
 
 /* ===== Public API ===== */
 
-/**
+/*
  * mcp_unix_socket_server_new:
  * @server_name: the name passed to each per-connection #McpServer
  * @server_version: the version passed to each per-connection #McpServer
@@ -378,7 +378,7 @@ mcp_unix_socket_server_new (
 	                     NULL);
 }
 
-/**
+/*
  * mcp_unix_socket_server_start:
  * @self: an #McpUnixSocketServer
  * @error: (nullable): return location for a #GError
@@ -467,7 +467,7 @@ mcp_unix_socket_server_start (
 	return TRUE;
 }
 
-/**
+/*
  * mcp_unix_socket_server_stop:
  * @self: an #McpUnixSocketServer
  *

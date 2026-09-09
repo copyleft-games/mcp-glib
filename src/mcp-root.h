@@ -26,6 +26,17 @@ G_BEGIN_DECLS
  */
 typedef struct _McpRoot McpRoot;
 
+#define MCP_TYPE_ROOT (mcp_root_get_type ())
+
+/**
+ * mcp_root_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpRoot.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_root_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_root_new:
  * @uri: the root URI (must use file:// scheme)

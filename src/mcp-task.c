@@ -240,7 +240,7 @@ mcp_task_init (McpTask *self)
     priv->last_updated_at = g_date_time_new_now_utc ();
 }
 
-/**
+/*
  * mcp_task_new:
  * @task_id: the task identifier
  * @status: the initial task status
@@ -259,7 +259,7 @@ mcp_task_new (const gchar   *task_id,
                          NULL);
 }
 
-/**
+/*
  * mcp_task_get_task_id:
  * @self: an #McpTask
  *
@@ -278,7 +278,7 @@ mcp_task_get_task_id (McpTask *self)
     return priv->task_id;
 }
 
-/**
+/*
  * mcp_task_set_task_id:
  * @self: an #McpTask
  * @task_id: the task ID
@@ -293,7 +293,7 @@ mcp_task_set_task_id (McpTask     *self,
     g_object_set (self, "task-id", task_id, NULL);
 }
 
-/**
+/*
  * mcp_task_get_status:
  * @self: an #McpTask
  *
@@ -312,7 +312,7 @@ mcp_task_get_status (McpTask *self)
     return priv->status;
 }
 
-/**
+/*
  * mcp_task_set_status:
  * @self: an #McpTask
  * @status: the task status
@@ -327,7 +327,7 @@ mcp_task_set_status (McpTask       *self,
     g_object_set (self, "status", status, NULL);
 }
 
-/**
+/*
  * mcp_task_get_status_message:
  * @self: an #McpTask
  *
@@ -346,7 +346,7 @@ mcp_task_get_status_message (McpTask *self)
     return priv->status_message;
 }
 
-/**
+/*
  * mcp_task_set_status_message:
  * @self: an #McpTask
  * @message: (nullable): the status message
@@ -361,7 +361,7 @@ mcp_task_set_status_message (McpTask     *self,
     g_object_set (self, "status-message", message, NULL);
 }
 
-/**
+/*
  * mcp_task_get_created_at:
  * @self: an #McpTask
  *
@@ -380,7 +380,7 @@ mcp_task_get_created_at (McpTask *self)
     return priv->created_at;
 }
 
-/**
+/*
  * mcp_task_set_created_at:
  * @self: an #McpTask
  * @created_at: the creation timestamp
@@ -395,7 +395,7 @@ mcp_task_set_created_at (McpTask   *self,
     g_object_set (self, "created-at", created_at, NULL);
 }
 
-/**
+/*
  * mcp_task_get_last_updated_at:
  * @self: an #McpTask
  *
@@ -414,7 +414,7 @@ mcp_task_get_last_updated_at (McpTask *self)
     return priv->last_updated_at;
 }
 
-/**
+/*
  * mcp_task_set_last_updated_at:
  * @self: an #McpTask
  * @last_updated_at: the last updated timestamp
@@ -429,7 +429,7 @@ mcp_task_set_last_updated_at (McpTask   *self,
     g_object_set (self, "last-updated-at", last_updated_at, NULL);
 }
 
-/**
+/*
  * mcp_task_get_ttl:
  * @self: an #McpTask
  *
@@ -448,7 +448,7 @@ mcp_task_get_ttl (McpTask *self)
     return priv->ttl;
 }
 
-/**
+/*
  * mcp_task_set_ttl:
  * @self: an #McpTask
  * @ttl: the TTL in milliseconds, or -1 for unlimited
@@ -463,7 +463,7 @@ mcp_task_set_ttl (McpTask *self,
     g_object_set (self, "ttl", ttl, NULL);
 }
 
-/**
+/*
  * mcp_task_get_poll_interval:
  * @self: an #McpTask
  *
@@ -482,7 +482,7 @@ mcp_task_get_poll_interval (McpTask *self)
     return priv->poll_interval;
 }
 
-/**
+/*
  * mcp_task_set_poll_interval:
  * @self: an #McpTask
  * @poll_interval: the poll interval in milliseconds, or -1 if not set
@@ -497,7 +497,7 @@ mcp_task_set_poll_interval (McpTask *self,
     g_object_set (self, "poll-interval", poll_interval, NULL);
 }
 
-/**
+/*
  * mcp_task_update_timestamp:
  * @self: an #McpTask
  *
@@ -515,7 +515,7 @@ mcp_task_update_timestamp (McpTask *self)
     priv->last_updated_at = g_date_time_new_now_utc ();
 }
 
-/**
+/*
  * mcp_task_to_json:
  * @self: an #McpTask
  *
@@ -594,7 +594,7 @@ mcp_task_to_json (McpTask *self)
     return result;
 }
 
-/**
+/*
  * mcp_task_new_from_json:
  * @node: a #JsonNode containing a task definition
  * @error: (nullable): return location for a #GError

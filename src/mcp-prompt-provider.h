@@ -31,6 +31,17 @@ G_DECLARE_INTERFACE (McpPromptProvider, mcp_prompt_provider, MCP, PROMPT_PROVIDE
  */
 typedef struct _McpPromptMessage McpPromptMessage;
 
+#define MCP_TYPE_PROMPT_MESSAGE (mcp_prompt_message_get_type ())
+
+/**
+ * mcp_prompt_message_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpPromptMessage.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_prompt_message_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_prompt_message_new:
  * @role: the message role (user or assistant)
@@ -136,6 +147,17 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC (McpPromptMessage, mcp_prompt_message_unref)
  */
 typedef struct _McpPromptResult McpPromptResult;
 
+#define MCP_TYPE_PROMPT_RESULT (mcp_prompt_result_get_type ())
+
+/**
+ * mcp_prompt_result_get_type:
+ *
+ * Gets the boxed type for the reference-counted #McpPromptResult.
+ *
+ * Returns: the registered #GType
+ */
+GType mcp_prompt_result_get_type (void) G_GNUC_CONST;
+
 /**
  * mcp_prompt_result_new:
  * @description: (nullable): an optional description
@@ -237,8 +259,8 @@ struct _McpPromptProviderInterface
      * @name: the prompt name
      * @arguments: (nullable): the arguments as a hash table of string to string
      * @cancellable: (nullable): a #GCancellable
-     * @callback: (scope async): callback to call when complete
-     * @user_data: (closure): user data for @callback
+     * @callback: (closure user_data) (scope async): callback to call when complete
+     * @user_data: user data for @callback
      *
      * Gets a prompt asynchronously.
      */
@@ -283,8 +305,8 @@ GList *mcp_prompt_provider_list_prompts (McpPromptProvider *self);
  * @name: the prompt name
  * @arguments: (nullable): the arguments as a hash table of string to string
  * @cancellable: (nullable): a #GCancellable
- * @callback: (scope async): callback to call when complete
- * @user_data: (closure): user data for @callback
+ * @callback: (closure user_data) (scope async): callback to call when complete
+ * @user_data: user data for @callback
  *
  * Gets a prompt asynchronously.
  */

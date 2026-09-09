@@ -886,7 +886,7 @@ mcp_http_server_transport_init (McpHttpServerTransport *self)
 
 /* Public API */
 
-/**
+/*
  * mcp_http_server_transport_new:
  * @port: the port to listen on (0 = auto-assign)
  *
@@ -905,7 +905,7 @@ mcp_http_server_transport_new (guint port)
     return self;
 }
 
-/**
+/*
  * mcp_http_server_transport_new_full:
  * @host: (nullable): the host/address to bind to
  * @port: the port to listen on
