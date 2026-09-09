@@ -500,6 +500,82 @@ test_teardown_with_a_write_in_flight (void)
 /* Main                                                                       */
 /* ========================================================================== */
 
+typedef struct
+{
+    guint completed;
+    guint failed;
+} WriteResults;
+
+/* Count every completion, including canceled active writes and drained entries. */
+static void
+on_bounded_write (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    WriteResults *results = user_data;
+    g_autoptr(GError) error = NULL;
+
+    if (!mcp_transport_send_message_finish (MCP_TRANSPORT (source), result, &error))
+        results->failed++;
+    results->completed++;
+}
+
+static void
+test_bounded_output (StdioFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(JsonNode) node = json_node_new (JSON_NODE_VALUE);
+    g_autofree gchar *payload = NULL;
+    WriteResults results = { 0, 0 };
+    gint64 deadline;
+    guint i;
+    gpointer weak_transport;
+
+    (void) user_data;
+    /* A blocked pipe must not keep queued source-object references alive. */
+    payload = g_strnfill (128 * 1024, 'x');
+    json_node_set_string (node, payload);
+    for (i = 0; i < 160; i++)
+        mcp_transport_send_message_async (MCP_TRANSPORT (fixture->transport),
+                                          node, NULL, on_bounded_write, &results);
+    g_assert_cmpint (mcp_transport_get_state (MCP_TRANSPORT (fixture->transport)), ==,
+                    MCP_TRANSPORT_STATE_ERROR);
+    mcp_transport_disconnect_async (MCP_TRANSPORT (fixture->transport), NULL, NULL, NULL);
+    deadline = g_get_monotonic_time () + 2 * G_USEC_PER_SEC;
+    while (results.completed < 160 && g_get_monotonic_time () < deadline)
+    {
+        g_main_context_iteration (NULL, FALSE);
+        g_usleep (1000);
+    }
+    g_assert_cmpuint (results.completed, ==, 160);
+    g_assert_cmpuint (results.failed, >, 0);
+    weak_transport = fixture->transport;
+    g_object_add_weak_pointer (G_OBJECT (fixture->transport), &weak_transport);
+    g_clear_object (&fixture->transport);
+    while (weak_transport != NULL && g_get_monotonic_time () < deadline)
+        g_main_context_iteration (NULL, FALSE);
+    g_assert_null (weak_transport);
+}
+
+static void
+test_bounded_message_count (StdioFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(JsonNode) node = json_node_new (JSON_NODE_VALUE);
+    WriteResults results = { 0, 0 };
+    gint64 deadline;
+    guint i;
+
+    (void) user_data;
+    json_node_set_string (node, "small");
+    /* Do not iterate: completions are queued even if the first write fits. */
+    for (i = 0; i < 257; i++)
+        mcp_transport_send_message_async (MCP_TRANSPORT (fixture->transport),
+                                          node, NULL, on_bounded_write, &results);
+    g_assert_cmpint (mcp_transport_get_state (MCP_TRANSPORT (fixture->transport)), ==,
+                    MCP_TRANSPORT_STATE_ERROR);
+    deadline = g_get_monotonic_time () + 2 * G_USEC_PER_SEC;
+    while (results.completed < 257 && g_get_monotonic_time () < deadline)
+        g_main_context_iteration (NULL, FALSE);
+    g_assert_cmpuint (results.completed, ==, 257);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -510,6 +586,8 @@ main (int argc, char *argv[])
                 stdio_fixture_tear_down)
 
     STDIO_TEST ("/mcp/stdio/reads-a-line", test_reads_a_line);
+    STDIO_TEST ("/mcp/stdio/bounded-output", test_bounded_output);
+    STDIO_TEST ("/mcp/stdio/bounded-message-count", test_bounded_message_count);
     STDIO_TEST ("/mcp/stdio/reads-a-line-split-across-reads",
                 test_reads_a_line_split_across_reads);
     STDIO_TEST ("/mcp/stdio/reads-two-lines-from-one-write",

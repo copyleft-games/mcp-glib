@@ -674,15 +674,15 @@ connect_cb (GObject      *source,
             GAsyncResult *result,
             gpointer      user_data)
 {
-    McpServer *self = MCP_SERVER (user_data);
+    g_autoptr(McpServer) self = MCP_SERVER (user_data);
     GError *error = NULL;
 
     if (!mcp_transport_connect_finish (MCP_TRANSPORT (source), result, &error))
     {
         if (self->start_task != NULL)
         {
-            g_task_return_error (self->start_task, error);
-            g_clear_object (&self->start_task);
+            g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
+            g_task_return_error (task, error);
         }
         else
         {
@@ -691,6 +691,9 @@ connect_cb (GObject      *source,
         return;
     }
 
+    if (mcp_session_get_state (MCP_SESSION (self)) == MCP_SESSION_STATE_CLOSING ||
+        mcp_transport_get_state (self->transport) != MCP_TRANSPORT_STATE_CONNECTED)
+        return;
     /* Now in CONNECTING state, waiting for initialize request */
     mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_CONNECTING);
 }
@@ -723,7 +726,7 @@ mcp_server_start_async (McpServer           *self,
     g_task_set_source_tag (self->start_task, mcp_server_start_async);
 
     /* Connect transport */
-    mcp_transport_connect_async (self->transport, cancellable, connect_cb, self);
+    mcp_transport_connect_async (self->transport, cancellable, connect_cb, g_object_ref (self));
 }
 
 gboolean
@@ -752,7 +755,7 @@ mcp_server_run (McpServer  *self,
 
     /* Connect synchronously */
     {
-        mcp_transport_connect_async (self->transport, NULL, connect_cb, self);
+        mcp_transport_connect_async (self->transport, NULL, connect_cb, g_object_ref (self));
 
         /* Run main loop until transport disconnects or errors */
         self->main_loop = g_main_loop_new (NULL, FALSE);
@@ -775,6 +778,12 @@ mcp_server_stop (McpServer *self)
     g_return_if_fail (MCP_IS_SERVER (self));
 
     mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_CLOSING);
+    if (self->start_task != NULL)
+    {
+        g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
+        g_task_return_new_error (task, MCP_ERROR,
+                                MCP_ERROR_CONNECTION_CLOSED, "Server stopped during initialization");
+    }
 
     if (self->main_loop != NULL)
     {
@@ -1197,14 +1206,14 @@ on_message_received (McpTransport *transport,
                      JsonNode     *message,
                      gpointer      user_data)
 {
-    McpServer *self = MCP_SERVER (user_data);
+    g_autoptr(McpServer) self = g_object_ref (MCP_SERVER (user_data));
     g_autoptr(McpMessage) msg = NULL;
     g_autoptr(GError) error = NULL;
 
     msg = mcp_message_new_from_json (message, &error);
     if (msg == NULL)
     {
-        g_warning ("Failed to parse message: %s", error->message);
+        g_debug ("Failed to parse message: %s", error->message);
         send_error_response (self, NULL, MCP_ERROR_PARSE_ERROR,
                              error->message, NULL);
         return;
@@ -1237,7 +1246,7 @@ on_state_changed (McpTransport      *transport,
                   McpTransportState  new_state,
                   gpointer           user_data)
 {
-    McpServer *self = MCP_SERVER (user_data);
+    g_autoptr(McpServer) self = g_object_ref (MCP_SERVER (user_data));
 
     if (new_state == MCP_TRANSPORT_STATE_DISCONNECTED)
     {
@@ -1263,7 +1272,7 @@ on_transport_error (McpTransport *transport,
                     GError       *error,
                     gpointer      user_data)
 {
-    McpServer *self = MCP_SERVER (user_data);
+    g_autoptr(McpServer) self = g_object_ref (MCP_SERVER (user_data));
 
     /* A peer disconnecting (clean EOF) is routine for a server, not a fault;
      * log it at debug level so a busy server churning client connections does
@@ -1271,6 +1280,9 @@ on_transport_error (McpTransport *transport,
      * transport faults still warn. */
     if (g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
         g_debug ("Transport closed: %s", error->message);
+    else if (g_error_matches (error, MCP_ERROR, MCP_ERROR_PARSE_ERROR) ||
+             g_error_matches (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST))
+        g_debug ("Invalid peer input: %s", error->message);
     else
         g_warning ("Transport error: %s", error->message);
 
@@ -1281,8 +1293,8 @@ on_transport_error (McpTransport *transport,
 
     if (self->start_task != NULL)
     {
-        g_task_return_error (self->start_task, g_error_copy (error));
-        g_clear_object (&self->start_task);
+        g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
+        g_task_return_error (task, g_error_copy (error));
     }
 }
 
@@ -1399,23 +1411,29 @@ handle_initialize (McpServer  *self,
     McpImplementation *impl;
 
     params = get_request_params_object (request);
-    if (params == NULL)
+    if (params == NULL ||
+        mcp_json_get_string (params, "protocolVersion") == NULL ||
+        mcp_json_get_object (params, "capabilities") == NULL ||
+        mcp_json_get_string (mcp_json_get_object (params, "clientInfo"), "name") == NULL ||
+        mcp_json_get_string (mcp_json_get_object (params, "clientInfo"), "version") == NULL)
     {
         send_error_response (self, request,
                              MCP_ERROR_INVALID_PARAMS,
-                             "Missing params", NULL);
+                             "initialize requires protocolVersion, capabilities and clientInfo name/version", NULL);
         return;
     }
 
     /* Parse client capabilities */
+    g_clear_object (&self->client_capabilities);
     cap_node = mcp_json_get_member_of_type (params, "capabilities", JSON_NODE_OBJECT);
     if (cap_node != NULL)
     {
         self->client_capabilities = mcp_client_capabilities_new_from_json (cap_node, &error);
         if (self->client_capabilities == NULL)
         {
-            g_warning ("Failed to parse client capabilities: %s", error->message);
-            self->client_capabilities = mcp_client_capabilities_new ();
+            send_error_response (self, request, MCP_ERROR_INVALID_PARAMS,
+                                 "Invalid client capabilities", NULL);
+            return;
         }
     }
     else
@@ -1538,6 +1556,12 @@ handle_tools_call (McpServer  *self,
     }
 
     arguments = mcp_json_get_object (params, "arguments");
+    if (json_object_has_member (params, "arguments") && arguments == NULL)
+    {
+        send_error_response (self, request, MCP_ERROR_INVALID_PARAMS,
+                             "Tool arguments must be an object", NULL);
+        return;
+    }
 
     g_signal_emit (self, signals[SIGNAL_TOOL_CALLED], 0, name, arguments);
 
@@ -2075,6 +2099,19 @@ handle_request (McpServer  *self,
 
     method = mcp_request_get_method (request);
 
+    /* Handshake state is connection-local. Never expose application handlers
+     * before the client has completed initialize and acknowledged the result. */
+    if ((g_strcmp0 (method, "initialize") == 0 &&
+         mcp_session_get_state (MCP_SESSION (self)) != MCP_SESSION_STATE_CONNECTING) ||
+        (g_strcmp0 (method, "initialize") != 0 &&
+         g_strcmp0 (method, "ping") != 0 &&
+         mcp_session_get_state (MCP_SESSION (self)) != MCP_SESSION_STATE_READY))
+    {
+        send_error_response (self, request, MCP_ERROR_INVALID_REQUEST,
+                             "Request is invalid in the current initialization state", NULL);
+        return;
+    }
+
     if (g_strcmp0 (method, "initialize") == 0)
     {
         handle_initialize (self, request);
@@ -2159,14 +2196,16 @@ handle_notification (McpServer       *self,
 
     if (g_strcmp0 (method, "notifications/initialized") == 0)
     {
+        if (mcp_session_get_state (MCP_SESSION (self)) != MCP_SESSION_STATE_INITIALIZING)
+            return;
         /* Client has acknowledged initialization */
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_READY);
         g_signal_emit (self, signals[SIGNAL_CLIENT_INITIALIZED], 0);
 
         if (self->start_task != NULL)
         {
-            g_task_return_boolean (self->start_task, TRUE);
-            g_clear_object (&self->start_task);
+            g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
+            g_task_return_boolean (task, TRUE);
         }
     }
     else if (g_strcmp0 (method, "notifications/cancelled") == 0)

@@ -10,6 +10,7 @@
 #include <gio/gunixsocketaddress.h>
 #include <string.h>
 #include <unistd.h>
+#include <glib/gstdio.h>
 #include "mcp.h"
 
 /* ===== Test helpers ===== */
@@ -257,9 +258,11 @@ test_unix_socket_server_start_stale_socket (void)
 
 	server = mcp_unix_socket_server_new ("test", "1.0.0", path);
 
-	/* Should succeed by unlinking the stale file first */
-	g_assert_true (mcp_unix_socket_server_start (server, &error));
-	g_assert_no_error (error);
+	/* Existing caller data is never removed, even if called stale. */
+	g_assert_false (mcp_unix_socket_server_start (server, &error));
+	g_assert_error (error, G_IO_ERROR, G_IO_ERROR_EXISTS);
+	g_assert_true (g_file_test (path, G_FILE_TEST_IS_REGULAR));
+	g_unlink (path);
 
 	mcp_unix_socket_server_stop (server);
 }
@@ -683,10 +686,89 @@ test_unix_socket_server_connect_disconnect_race (void)
  * Main
  * ========================================================================== */
 
+/* Reject excess connections and expire an idle handshake. */
+static void
+test_session_bounds (void)
+{
+	g_autofree gchar *path = make_test_socket_path ("bounds");
+	g_autoptr(McpUnixSocketServer) server = mcp_unix_socket_server_new ("test", "1", path);
+	g_autoptr(GSocketConnection) first = NULL;
+	g_autoptr(GSocketConnection) second = NULL;
+	g_autoptr(GError) error = NULL;
+	gint64 deadline;
+
+	g_object_set (server, "max-sessions", 1u, "handshake-timeout-ms", 100u, NULL);
+	g_assert_true (mcp_unix_socket_server_start (server, &error));
+	first = connect_client (path, &error);
+	g_assert_no_error (error);
+	spin_mainloop ();
+	g_assert_cmpuint (mcp_unix_socket_server_get_session_count (server), ==, 1);
+	second = connect_client (path, &error);
+	g_assert_no_error (error);
+	spin_mainloop ();
+	g_assert_cmpuint (mcp_unix_socket_server_get_session_count (server), ==, 1);
+	deadline = g_get_monotonic_time () + 2 * G_USEC_PER_SEC;
+	while (mcp_unix_socket_server_get_session_count (server) != 0 &&
+	       g_get_monotonic_time () < deadline)
+	{
+		g_main_context_iteration (NULL, FALSE);
+		g_usleep (1000);
+	}
+	g_assert_cmpuint (mcp_unix_socket_server_get_session_count (server), ==, 0);
+	mcp_unix_socket_server_stop (server);
+	spin_mainloop ();
+}
+
+/* Shutdown must preserve a pathname replaced after the socket was bound. */
+static void
+test_preserve_replacement (void)
+{
+	g_autofree gchar *path = make_test_socket_path ("replacement");
+	g_autoptr(McpUnixSocketServer) server = mcp_unix_socket_server_new ("test", "1", path);
+	g_autoptr(GError) error = NULL;
+
+	g_assert_true (mcp_unix_socket_server_start (server, &error));
+	g_assert_cmpint (g_unlink (path), ==, 0);
+	g_assert_true (g_file_set_contents (path, "replacement", -1, &error));
+	mcp_unix_socket_server_stop (server);
+	g_assert_true (g_file_test (path, G_FILE_TEST_IS_REGULAR));
+	g_unlink (path);
+}
+
+static void
+stop_from_signal (McpUnixSocketServer *server, McpServer *session, gpointer user_data)
+{
+	(void) session;
+	(void) user_data;
+	mcp_unix_socket_server_stop (server);
+}
+
+/* Both creation and close callbacks may request shutdown. */
+static void
+test_reentrant_stop (void)
+{
+	g_autofree gchar *path = make_test_socket_path ("reentrant");
+	g_autoptr(McpUnixSocketServer) server = mcp_unix_socket_server_new ("test", "1", path);
+	g_autoptr(GSocketConnection) connection = NULL;
+	g_autoptr(GError) error = NULL;
+
+	g_signal_connect (server, "session-created", G_CALLBACK (stop_from_signal), NULL);
+	g_signal_connect (server, "session-closed", G_CALLBACK (stop_from_signal), NULL);
+	g_assert_true (mcp_unix_socket_server_start (server, &error));
+	connection = connect_client (path, &error);
+	g_assert_no_error (error);
+	spin_mainloop ();
+	g_assert_false (mcp_unix_socket_server_is_running (server));
+	g_assert_cmpuint (mcp_unix_socket_server_get_session_count (server), ==, 0);
+}
+
 gint
 main (gint argc, gchar **argv)
 {
 	g_test_init (&argc, &argv, NULL);
+	g_test_add_func ("/mcp/unix-socket-server/session-bounds", test_session_bounds);
+	g_test_add_func ("/mcp/unix-socket-server/preserve-replacement", test_preserve_replacement);
+	g_test_add_func ("/mcp/unix-socket-server/reentrant-stop", test_reentrant_stop);
 
 	/* Constructor tests */
 	g_test_add_func ("/mcp/unix-socket-server/new",

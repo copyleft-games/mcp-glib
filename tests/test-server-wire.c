@@ -59,6 +59,9 @@ on_send (McpMuxTransport *transport,
     g_ptr_array_add (fixture->sent, text);
 }
 
+static void dispatch_json (WireFixture *fixture, const gchar *json);
+static void pump_for_frames (WireFixture *fixture, guint count);
+
 static void
 wire_fixture_set_up (WireFixture   *fixture,
                      gconstpointer  user_data)
@@ -92,6 +95,13 @@ wire_fixture_set_up (WireFixture   *fixture,
             g_main_context_iteration (fixture->context, FALSE);
         }
     }
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"id\":999,\"method\":\"initialize\","
+                   "\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+                   "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+    pump_for_frames (fixture, 1);
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+    while (g_main_context_iteration (fixture->context, FALSE)) {}
+    g_ptr_array_set_size (fixture->sent, 0);
 }
 
 static void
@@ -434,13 +444,14 @@ test_initialize_non_string_client_info (WireFixture   *fixture,
     JsonObject *reply;
 
     (void) user_data;
+    mcp_session_set_state (MCP_SESSION (fixture->server), MCP_SESSION_STATE_CONNECTING);
 
     dispatch_json (fixture,
                    "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"initialize\","
                    "\"params\":{\"clientInfo\":{\"name\":5,\"version\":\"1\"}}}");
     reply = pump_for_reply (fixture, 12, &parser);
     g_assert_nonnull (reply);
-    g_assert_true (json_object_has_member (reply, "result"));
+    g_assert_true (json_object_has_member (reply, "error"));
 }
 
 /* ========================================================================== */
@@ -528,6 +539,51 @@ test_cancelled_does_not_kill_server_request (WireFixture   *fixture,
 /* Main                                                                       */
 /* ========================================================================== */
 
+/* A forged initialized notification cannot unlock tools; duplicate initialize
+ * must leave a ready session and its negotiated capabilities intact. */
+static void
+test_handshake_order (WireFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(JsonParser) parser = NULL;
+    JsonObject *reply;
+
+    (void) user_data;
+    mcp_session_set_state (MCP_SESSION (fixture->server), MCP_SESSION_STATE_CONNECTING);
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"id\":71,\"method\":\"tools/list\"}");
+    reply = pump_for_reply (fixture, 71, &parser);
+    g_assert_true (json_object_has_member (reply, "error"));
+    g_assert_cmpint (mcp_session_get_state (MCP_SESSION (fixture->server)), ==,
+                    MCP_SESSION_STATE_CONNECTING);
+    g_clear_object (&parser);
+    mcp_session_set_state (MCP_SESSION (fixture->server), MCP_SESSION_STATE_READY);
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"id\":72,\"method\":\"initialize\","
+                   "\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+                   "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+    reply = pump_for_reply (fixture, 72, &parser);
+    g_assert_true (json_object_has_member (reply, "error"));
+    g_assert_cmpint (mcp_session_get_state (MCP_SESSION (fixture->server)), ==,
+                    MCP_SESSION_STATE_READY);
+}
+
+/* Reject a supplied non-object argument envelope before invoking user code. */
+static void
+test_tool_argument_envelope (WireFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(McpTool) tool = mcp_tool_new ("guarded", "Validation probe");
+    g_autoptr(JsonParser) parser = NULL;
+    JsonObject *reply;
+
+    (void) user_data;
+    mcp_server_add_tool (fixture->server, tool, NULL, NULL, NULL);
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"id\":73,\"method\":\"tools/call\","
+                   "\"params\":{\"name\":\"guarded\",\"arguments\":[1]}}");
+    reply = pump_for_reply (fixture, 73, &parser);
+    g_assert_true (json_object_has_member (reply, "error"));
+    g_assert_cmpint (json_object_get_int_member (json_object_get_object_member (reply, "error"),
+                                               "code"), ==, MCP_ERROR_INVALID_PARAMS);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -537,6 +593,8 @@ main (int argc, char *argv[])
     g_test_add (path, WireFixture, NULL, wire_fixture_set_up, func, wire_fixture_tear_down)
 
     WIRE_TEST ("/mcp/server-wire/ping-serialises", test_ping_serialises);
+    WIRE_TEST ("/mcp/server-wire/handshake-order", test_handshake_order);
+    WIRE_TEST ("/mcp/server-wire/tool-argument-envelope", test_tool_argument_envelope);
     WIRE_TEST ("/mcp/server-wire/resources-subscribe-serialises",
                test_resources_subscribe_serialises);
     WIRE_TEST ("/mcp/server-wire/resources-unsubscribe-serialises",

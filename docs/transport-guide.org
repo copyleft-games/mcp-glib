@@ -694,3 +694,11 @@ on_state_changed (McpTransport      *transport,
     }
 }
 #+end_src
+
+** Stdio resource bounds and shutdown
+
+The stdio transport limits pending output, including its active write, to 16 MiB and 256 frames. A frame or enqueue operation exceeding either limit returns =G_IO_ERROR_NO_SPACE= and moves the transport to ERROR. Pending queued writes complete with connection-closed errors and the active write is canceled. This bounds a client that sends requests while refusing to consume replies; callers should also bound application result sizes before constructing JSON.
+
+On Unix, connecting a =GUnixOutputStream= sets its descriptor to =O_NONBLOCK=. The transport requires exclusive use of its streams, and this descriptor flag remains changed. GLib's pollable output path ultimately invokes =write(2)=: merely waiting for pipe readiness cannot guarantee space for an entire frame, so a blocking descriptor could otherwise block the main context during an asynchronous send. Socket-backed GIO streams retain their existing handling.
+
+Disconnect, EOF, and transport failure drain queued task references, cancel the active write, and isolate late completions from a subsequent connection generation. Buffers and task entries for the active write remain owned until its asynchronous completion. Input retains its independently configurable =max-line-bytes= limit, defaulting to 16 MiB.

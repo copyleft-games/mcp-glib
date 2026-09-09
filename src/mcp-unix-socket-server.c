@@ -20,6 +20,9 @@
 #include <gio/gio.h>
 #include <gio/gunixsocketaddress.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <glib/gstdio.h>
 
 /* ===== Internal session structure ===== */
 
@@ -41,6 +44,7 @@ struct _McpUnixSocketSession
 	gulong                 state_handler_id;
 	gint                   refcount;          /* list ref + in-flight async start */
 	gboolean               torn_down;         /* owned resources already released */
+	GSource               *handshake_timeout;
 };
 
 /* ===== GObject struct ===== */
@@ -58,6 +62,12 @@ struct _McpUnixSocketServer
 	/* Socket listener */
 	GSocketService *socket_service;
 	gboolean        running;
+	gboolean        stopping;
+	gboolean        owns_socket;
+	dev_t           socket_device;
+	ino_t           socket_inode;
+	guint           max_sessions;
+	guint           handshake_timeout_ms;
 
 	/* Active sessions */
 	GList *sessions;   /* GList of McpUnixSocketSession* */
@@ -76,6 +86,20 @@ enum
 
 static guint signals[N_SIGNALS];
 
+/* Remove only the filesystem entry this listener actually bound. */
+static void
+release_socket_path (McpUnixSocketServer *self)
+{
+	struct stat socket_stat;
+
+	if (self->owns_socket && g_lstat (self->socket_path, &socket_stat) == 0 &&
+	    S_ISSOCK (socket_stat.st_mode) &&
+	    socket_stat.st_dev == self->socket_device &&
+	    socket_stat.st_ino == self->socket_inode)
+		g_unlink (self->socket_path);
+	self->owns_socket = FALSE;
+}
+
 /* ===== Properties ===== */
 
 enum
@@ -87,6 +111,8 @@ enum
 	PROP_INSTRUCTIONS,
 	PROP_SESSION_COUNT,
 	PROP_RUNNING,
+	PROP_MAX_SESSIONS,
+	PROP_HANDSHAKE_TIMEOUT_MS,
 	N_PROPERTIES
 };
 
@@ -123,6 +149,11 @@ session_teardown (McpUnixSocketSession *session)
 		return;
 
 	session->torn_down = TRUE;
+	if (session->handshake_timeout != NULL)
+	{
+		g_source_destroy (session->handshake_timeout);
+		g_clear_pointer (&session->handshake_timeout, g_source_unref);
+	}
 
 	if (session->transport != NULL && session->state_handler_id > 0)
 	{
@@ -256,6 +287,11 @@ on_session_server_started (
 		session_unref (session);
 		return;
 	}
+	if (session->handshake_timeout != NULL)
+	{
+		g_source_destroy (session->handshake_timeout);
+		g_clear_pointer (&session->handshake_timeout, g_source_unref);
+	}
 
 	if (!mcp_server_start_finish (session->server, result, &error))
 	{
@@ -279,6 +315,16 @@ on_session_server_started (
 }
 
 /* ===== Socket incoming handler ===== */
+
+/* An idle peer must not retain a server and streams indefinitely. */
+static gboolean
+on_handshake_timeout (gpointer user_data)
+{
+	McpUnixSocketSession *session = user_data;
+
+	remove_session (session->owner, session);
+	return G_SOURCE_REMOVE;
+}
 
 /*
  * on_incoming:
@@ -304,6 +350,12 @@ on_incoming (
 	(void)source_object;
 
 	self = MCP_UNIX_SOCKET_SERVER (user_data);
+	if (!self->running || self->stopping ||
+	    g_list_length (self->sessions) >= self->max_sessions)
+	{
+		g_io_stream_close (G_IO_STREAM (connection), NULL, NULL);
+		return TRUE;
+	}
 
 	session = g_new0 (McpUnixSocketSession, 1);
 	session->refcount   = 1;        /* held by the session list */
@@ -325,18 +377,33 @@ on_incoming (
 	if (self->instructions != NULL)
 		mcp_server_set_instructions (session->server, self->instructions);
 
-	/* Let consumer register tools/resources/prompts */
-	g_signal_emit (self, signals[SIGNAL_SESSION_CREATED], 0, session->server);
-
 	/* Track session */
+	session_ref (session);
 	self->sessions = g_list_prepend (self->sessions, session);
 	g_object_notify_by_pspec (G_OBJECT (self),
 	                          properties[PROP_SESSION_COUNT]);
+	if (session->torn_down)
+	{
+		session_unref (session);
+		return TRUE;
+	}
 
 	/* Watch for disconnect */
 	session->state_handler_id = g_signal_connect (
 		MCP_TRANSPORT (session->transport), "state-changed",
 		G_CALLBACK (on_session_transport_state_changed), session);
+
+	/* Hold the session across user callbacks, which may stop the listener. */
+	g_signal_emit (self, signals[SIGNAL_SESSION_CREATED], 0, session->server);
+	if (session->torn_down)
+	{
+		session_unref (session);
+		return TRUE;
+	}
+	session->handshake_timeout = g_timeout_source_new (self->handshake_timeout_ms);
+	g_source_set_callback (session->handshake_timeout, on_handshake_timeout,
+	                       session, NULL);
+	g_source_attach (session->handshake_timeout, g_main_context_get_thread_default ());
 
 	/* Start the MCP handshake.  Hold an extra ref for the duration of the
 	 * async op: on_session_server_started releases it, and that keeps the
@@ -344,6 +411,7 @@ on_incoming (
 	mcp_server_start_async (session->server, NULL,
 	                        on_session_server_started,
 	                        session_ref (session));
+	session_unref (session);
 
 	g_debug ("mcp-unix-socket-server: accepted connection");
 	return TRUE;
@@ -393,6 +461,7 @@ mcp_unix_socket_server_start (
 	GError              **error
 ){
 	g_autoptr(GSocketAddress) address = NULL;
+	struct stat socket_stat;
 
 	g_return_val_if_fail (MCP_IS_UNIX_SOCKET_SERVER (self), FALSE);
 
@@ -403,8 +472,13 @@ mcp_unix_socket_server_start (
 		return FALSE;
 	}
 
-	/* Remove stale socket file from a previous run */
-	unlink (self->socket_path);
+	/* A caller-owned pathname must never be removed to make binding succeed. */
+	if (g_lstat (self->socket_path, &socket_stat) == 0 || errno != ENOENT)
+	{
+		g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS,
+		                     "Socket path already exists or cannot be inspected");
+		return FALSE;
+	}
 
 	self->socket_service = g_socket_service_new ();
 
@@ -439,9 +513,21 @@ mcp_unix_socket_server_start (
 			g_clear_object (&self->socket_service);
 			return FALSE;
 		}
+		if (g_lstat (self->socket_path, &socket_stat) != 0 ||
+		    !S_ISSOCK (socket_stat.st_mode))
+		{
+			g_clear_object (&self->socket_service);
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+			                     "Cannot identify bound socket");
+			return FALSE;
+		}
+		self->socket_device = socket_stat.st_dev;
+		self->socket_inode = socket_stat.st_ino;
+		self->owns_socket = TRUE;
 
 		if (!g_socket_listen (listen_socket, error))
 		{
+			release_socket_path (self);
 			g_clear_object (&self->socket_service);
 			return FALSE;
 		}
@@ -450,10 +536,12 @@ mcp_unix_socket_server_start (
 			    G_SOCKET_LISTENER (self->socket_service),
 			    listen_socket, NULL, error))
 		{
+			release_socket_path (self);
 			g_clear_object (&self->socket_service);
 			return FALSE;
 		}
 	}
+
 
 	g_signal_connect (self->socket_service, "incoming",
 	                  G_CALLBACK (on_incoming), self);
@@ -478,8 +566,10 @@ mcp_unix_socket_server_stop (McpUnixSocketServer *self)
 {
 	g_return_if_fail (MCP_IS_UNIX_SOCKET_SERVER (self));
 
-	if (!self->running)
+	if (!self->running || self->stopping)
 		return;
+	self->stopping = TRUE;
+	self->running = FALSE;
 
 	/* Stop accepting new connections */
 	if (self->socket_service != NULL)
@@ -495,13 +585,11 @@ mcp_unix_socket_server_stop (McpUnixSocketServer *self)
 
 		session = (McpUnixSocketSession *)self->sessions->data;
 
-		/* Emit session-closed (still has its server) */
-		g_signal_emit (self, signals[SIGNAL_SESSION_CLOSED], 0,
-		               session->server);
-
 		/* Remove from list before freeing to avoid reentrant issues */
 		self->sessions = g_list_delete_link (self->sessions,
 		                                     self->sessions);
+		g_signal_emit (self, signals[SIGNAL_SESSION_CLOSED], 0,
+		               session->server);
 
 		/* Release resources now; struct survives for any in-flight async
 		 * start, then session_unref drops the list reference. */
@@ -513,10 +601,10 @@ mcp_unix_socket_server_stop (McpUnixSocketServer *self)
 	                          properties[PROP_SESSION_COUNT]);
 
 	/* Remove socket file */
-	if (self->socket_path != NULL)
-		unlink (self->socket_path);
+	release_socket_path (self);
 
 	self->running = FALSE;
+	self->stopping = FALSE;
 	g_object_notify_by_pspec (G_OBJECT (self), properties[PROP_RUNNING]);
 
 	g_debug ("mcp-unix-socket-server: stopped");
@@ -608,6 +696,12 @@ mcp_unix_socket_server_set_property (
 		mcp_unix_socket_server_set_instructions (self,
 			g_value_get_string (value));
 		break;
+	case PROP_MAX_SESSIONS:
+		self->max_sessions = g_value_get_uint (value);
+		break;
+	case PROP_HANDSHAKE_TIMEOUT_MS:
+		self->handshake_timeout_ms = g_value_get_uint (value);
+		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
 		break;
@@ -645,6 +739,12 @@ mcp_unix_socket_server_get_property (
 		break;
 	case PROP_RUNNING:
 		g_value_set_boolean (value, self->running);
+		break;
+	case PROP_MAX_SESSIONS:
+		g_value_set_uint (value, self->max_sessions);
+		break;
+	case PROP_HANDSHAKE_TIMEOUT_MS:
+		g_value_set_uint (value, self->handshake_timeout_ms);
 		break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -775,6 +875,14 @@ mcp_unix_socket_server_class_init (McpUnixSocketServerClass *klass)
 		                      G_PARAM_READABLE |
 		                      G_PARAM_STATIC_STRINGS);
 
+	properties[PROP_MAX_SESSIONS] =
+		g_param_spec_uint ("max-sessions", "Maximum sessions",
+		                   "Maximum concurrent client connections", 1, 4096, 32,
+		                   G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+	properties[PROP_HANDSHAKE_TIMEOUT_MS] =
+		g_param_spec_uint ("handshake-timeout-ms", "Handshake timeout",
+		                   "Milliseconds allowed to initialize", 1, 600000, 10000,
+		                   G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
 	g_object_class_install_properties (object_class, N_PROPERTIES,
 	                                   properties);
 
@@ -806,7 +914,8 @@ mcp_unix_socket_server_class_init (McpUnixSocketServerClass *klass)
 	 * @server: (transfer none): the #McpServer whose connection closed
 	 *
 	 * Emitted when a client connection closes (gracefully or on error).
-	 * The server has already been stopped. Use this for cleanup.
+	 * The session has left the listener's list but is not yet stopped.
+	 * Use this for cleanup; do not retain borrowed application data.
 	 */
 	signals[SIGNAL_SESSION_CLOSED] =
 		g_signal_new ("session-closed",
@@ -829,4 +938,6 @@ mcp_unix_socket_server_init (McpUnixSocketServer *self)
 	self->socket_service = NULL;
 	self->running        = FALSE;
 	self->sessions       = NULL;
+	self->max_sessions = 32;
+	self->handshake_timeout_ms = 10000;
 }

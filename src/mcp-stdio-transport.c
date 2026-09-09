@@ -21,6 +21,8 @@
 #include <gio/gunixoutputstream.h>
 #include <unistd.h>
 #include <signal.h>
+#include <fcntl.h>
+#include <errno.h>
 #endif
 
 /**
@@ -38,6 +40,8 @@
  * on anything.
  */
 #define MCP_STDIO_READ_CHUNK_BYTES (64 * 1024)
+#define MCP_STDIO_MAX_QUEUED_BYTES (16 * 1024 * 1024)
+#define MCP_STDIO_MAX_QUEUED_MESSAGES (256)
 
 struct _McpStdioTransport
 {
@@ -66,6 +70,9 @@ struct _McpStdioTransport
     /* Write queue to handle sequential async writes */
     GQueue *write_queue;
     gboolean write_in_progress;
+    GCancellable *write_cancellable;
+    gsize queued_bytes;
+    guint write_generation;
 };
 
 static void mcp_stdio_transport_iface_init (McpTransportInterface *iface);
@@ -98,6 +105,8 @@ static gboolean start_read_loop_idle (gpointer user_data);
 /*
  * Set state and emit signal.
  */
+static void abort_writes (McpStdioTransport *self);
+
 static void
 set_state (McpStdioTransport *self,
            McpTransportState  new_state)
@@ -108,6 +117,10 @@ set_state (McpStdioTransport *self,
     if (old_state != new_state)
     {
         self->state = new_state;
+        if (new_state == MCP_TRANSPORT_STATE_DISCONNECTING ||
+            new_state == MCP_TRANSPORT_STATE_DISCONNECTED ||
+            new_state == MCP_TRANSPORT_STATE_ERROR)
+            abort_writes (self);
         mcp_transport_emit_state_changed (MCP_TRANSPORT (self), old_state, new_state);
     }
 }
@@ -135,10 +148,34 @@ write_queue_entry_free (WriteQueueEntry *entry)
 
 static void process_write_queue (McpStdioTransport *self);
 
+/* Complete queued tasks immediately, breaking their source-object references.
+ * The active write owns its entry independently and finishes after cancellation. */
+static void
+abort_writes (McpStdioTransport *self)
+{
+    WriteQueueEntry *entry;
+
+    if (self->write_cancellable != NULL)
+        g_cancellable_cancel (self->write_cancellable);
+    g_clear_object (&self->write_cancellable);
+    self->write_generation++;
+    self->write_in_progress = FALSE;
+    self->queued_bytes = 0;
+    while (self->write_queue != NULL &&
+           (entry = g_queue_pop_head (self->write_queue)) != NULL)
+    {
+        g_task_return_new_error (entry->task, MCP_ERROR,
+                                MCP_ERROR_CONNECTION_CLOSED, "Transport closed");
+        write_queue_entry_free (entry);
+    }
+}
+
 static void
 mcp_stdio_transport_dispose (GObject *object)
 {
     McpStdioTransport *self = MCP_STDIO_TRANSPORT (object);
+
+    abort_writes (self);
 
     /* Cancel any pending reads */
     if (self->read_cancellable != NULL)
@@ -357,6 +394,23 @@ stdio_transport_connect_async (McpTransport        *transport,
         return;
     }
 
+#ifndef _WIN32
+    /* GUnixOutputStream's pollable write still uses write(2). Readiness does
+     * not guarantee room for a whole MCP frame on a pipe: a blocking fd can
+     * therefore stall the main context despite using the async GIO API. */
+    if (G_IS_UNIX_OUTPUT_STREAM (self->output))
+    {
+        gint fd = g_unix_output_stream_get_fd (G_UNIX_OUTPUT_STREAM (self->output));
+        gint flags = fcntl (fd, F_GETFL);
+
+        if (flags < 0 || fcntl (fd, F_SETFL, flags | O_NONBLOCK) < 0)
+        {
+            g_task_return_new_error (task, G_IO_ERROR, g_io_error_from_errno (errno),
+                                     "Cannot make MCP output nonblocking: %s", g_strerror (errno));
+            return;
+        }
+    }
+#endif
     set_state (self, MCP_TRANSPORT_STATE_CONNECTING);
 
     /* Anything left over from a previous connection is not part of this
@@ -365,6 +419,7 @@ stdio_transport_connect_async (McpTransport        *transport,
 
     /* Create cancellable for read loop */
     self->read_cancellable = g_cancellable_new ();
+    self->write_cancellable = g_cancellable_new ();
 
     /* Set state to connected */
     set_state (self, MCP_TRANSPORT_STATE_CONNECTED);
@@ -476,6 +531,8 @@ typedef struct
     GOutputStream *stream;   /* owned */
     gchar         *data;     /* owned: taken from the queue entry */
     gsize          len;
+    WriteQueueEntry *entry;
+    guint generation;
 } WriteOp;
 
 static void
@@ -483,6 +540,7 @@ write_op_free (WriteOp *op)
 {
     g_weak_ref_clear (&op->transport);
     g_clear_object (&op->stream);
+    write_queue_entry_free (op->entry);
     g_free (op->data);
     g_free (op);
 }
@@ -507,19 +565,7 @@ write_message_cb (GObject      *source,
 
     ok = g_output_stream_write_all_finish (G_OUTPUT_STREAM (source), result,
                                            &bytes_written, &error);
-    write_op_free (op);
-
-    /* The transport went away while the write was in flight; dispose
-     * already answered every queued task. */
-    if (self == NULL)
-    {
-        g_clear_error (&error);
-        return;
-    }
-
-    /* Pop the entry we just wrote */
-    entry = g_queue_pop_head (self->write_queue);
-    g_return_if_fail (entry != NULL);
+    entry = op->entry;
 
     if (!ok)
     {
@@ -540,11 +586,17 @@ write_message_cb (GObject      *source,
         }
     }
 
-    write_queue_entry_free (entry);
-
-    /* Mark write as complete and process next in queue */
-    self->write_in_progress = FALSE;
-    process_write_queue (self);
+    /* A disconnected/reconnected transport may have a newer write active. */
+    if (self != NULL && self->write_generation == op->generation)
+    {
+        self->queued_bytes -= op->len;
+        self->write_in_progress = FALSE;
+        if (!ok)
+            set_state (self, MCP_TRANSPORT_STATE_ERROR);
+        else
+            process_write_queue (self);
+    }
+    write_op_free (op);
 }
 
 /*
@@ -568,7 +620,7 @@ process_write_queue (McpStdioTransport *self)
         return;
     }
 
-    entry = g_queue_peek_head (self->write_queue);
+    entry = g_queue_pop_head (self->write_queue);
     if (entry == NULL)
     {
         return;
@@ -579,13 +631,15 @@ process_write_queue (McpStdioTransport *self)
     op->stream = g_object_ref (self->output);
     op->data = g_steal_pointer (&entry->line);
     op->len = entry->len;
+    op->entry = entry;
+    op->generation = self->write_generation;
 
     self->write_in_progress = TRUE;
     g_output_stream_write_all_async (op->stream,
                                      op->data,
                                      op->len,
                                      G_PRIORITY_DEFAULT,
-                                     NULL,
+                                     self->write_cancellable,
                                      write_message_cb,
                                      op);
 }
@@ -621,11 +675,26 @@ stdio_transport_send_message_async (McpTransport        *transport,
     json_generator_set_root (generator, message);
     json_str = json_generator_to_data (generator, NULL);
 
+    /* Bound both aggregate bytes and tiny-frame floods, including the active
+     * write. Closing prevents a slow reader from retaining unlimited replies. */
+    if (strlen (json_str) >= MCP_STDIO_MAX_QUEUED_BYTES ||
+        strlen (json_str) + 1 > MCP_STDIO_MAX_QUEUED_BYTES - self->queued_bytes ||
+        g_queue_get_length (self->write_queue) +
+            (self->write_in_progress ? 1 : 0) >= MCP_STDIO_MAX_QUEUED_MESSAGES)
+    {
+        set_state (self, MCP_TRANSPORT_STATE_ERROR);
+        g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
+                                "MCP output queue limit exceeded");
+        g_object_unref (task);
+        return;
+    }
+
     /* Create queue entry */
     entry = g_new0 (WriteQueueEntry, 1);
     entry->task = task;  /* Takes ownership */
     entry->line = g_strdup_printf ("%s\n", json_str);
     entry->len = strlen (entry->line);
+    self->queued_bytes += entry->len;
 
     /* Add to queue and process */
     g_queue_push_tail (self->write_queue, entry);
