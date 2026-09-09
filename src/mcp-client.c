@@ -10,6 +10,7 @@
 #include "mcp-version.h"
 #include "mcp-task.h"
 #include "mcp-json-util.h"
+#include "mcp-request-util.h"
 #undef MCP_COMPILATION
 
 /**
@@ -437,19 +438,25 @@ mcp_client_get_transport (McpClient *self)
 }
 
 /* Helper to send a request and track it */
+static GTask *take_connect_task (McpClient *self);
+
+/* Initialize lives in both the handshake slot and pending request table. */
+static GTask *
+take_client_request (McpSession *session, const gchar *id)
+{
+    McpClient *self = MCP_CLIENT (session);
+    if (g_strcmp0 (self->connect_request_id, id) == 0)
+        return take_connect_task (self);
+    return mcp_session_take_pending_request (session, id);
+}
+
 static void
 send_request (McpClient   *self,
               McpRequest  *request,
               GTask       *task)
 {
-    g_autoptr(JsonNode) node = NULL;
-    const gchar *id;
-
-    id = mcp_request_get_id (request);
-    mcp_session_add_pending_request (MCP_SESSION (self), id, task);
-
-    node = mcp_message_to_json (MCP_MESSAGE (request));
-    mcp_transport_send_message_async (self->transport, node, NULL, NULL, NULL);
+    mcp_send_tracked_request (MCP_SESSION (self), self->transport, request,
+                              task, take_client_request);
 }
 
 /* Connection */
@@ -531,10 +538,19 @@ transport_connect_cb (GObject      *source,
                       GAsyncResult *result,
                       gpointer      user_data)
 {
-    McpClient *self = MCP_CLIENT (user_data);
+    g_autoptr(GTask) operation = G_TASK (user_data);
+    McpClient *self = g_task_get_source_object (operation);
     GError *error = NULL;
+    gboolean connected;
 
-    if (!mcp_transport_connect_finish (MCP_TRANSPORT (source), result, &error))
+    connected = mcp_transport_connect_finish (MCP_TRANSPORT (source), result, &error);
+    /* Cancellation/disconnect may have completed this generation already. */
+    if (self->connect_task != operation)
+    {
+        g_clear_error (&error);
+        return;
+    }
+    if (!connected)
     {
         g_autoptr(GTask) task = take_connect_task (self);
 
@@ -582,7 +598,8 @@ mcp_client_connect_async (McpClient           *self,
     g_task_set_source_tag (self->connect_task, mcp_client_connect_async);
 
     mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_CONNECTING);
-    mcp_transport_connect_async (self->transport, cancellable, transport_connect_cb, self);
+    mcp_transport_connect_async (self->transport, cancellable, transport_connect_cb,
+                                 g_object_ref (self->connect_task));
 }
 
 gboolean
@@ -1293,7 +1310,17 @@ on_state_changed (McpTransport      *transport,
                   McpTransportState  new_state,
                   gpointer           user_data)
 {
-    McpClient *self = MCP_CLIENT (user_data);
+    g_autoptr(McpClient) self = g_object_ref (MCP_CLIENT (user_data));
+
+    /* Remove initialize from both owners before the generic pending drain. */
+    if (new_state == MCP_TRANSPORT_STATE_DISCONNECTED ||
+        new_state == MCP_TRANSPORT_STATE_ERROR)
+    {
+        g_autoptr(GTask) task = take_connect_task (self);
+        if (task != NULL)
+            g_task_return_new_error (task, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED,
+                                     "Transport closed during initialization");
+    }
 
     if (new_state == MCP_TRANSPORT_STATE_DISCONNECTED)
     {
@@ -1345,21 +1372,26 @@ on_initialized_notification_sent (GObject      *source,
                                    GAsyncResult *result,
                                    gpointer      user_data)
 {
-    McpClient *self = MCP_CLIENT (user_data);
+    g_autoptr(GTask) operation = G_TASK (user_data);
+    McpClient *self = g_task_get_source_object (operation);
     g_autoptr(GError) error = NULL;
 
     if (!mcp_transport_send_message_finish (MCP_TRANSPORT (source), result, &error))
     {
-        g_warning ("Failed to send initialized notification: %s", error->message);
+        g_debug ("Failed to send initialized notification: %s", error->message);
     }
 
     /* Now that the send is complete, we can safely complete the connect task */
+    if (self->connect_task == operation)
     {
         g_autoptr(GTask) task = take_connect_task (self);
 
         if (task != NULL)
         {
-            g_task_return_boolean (task, TRUE);
+            if (error != NULL)
+                g_task_return_error (task, g_steal_pointer (&error));
+            else
+                g_task_return_boolean (task, TRUE);
         }
     }
 }
@@ -1459,7 +1491,8 @@ handle_initialize_response (McpClient   *self,
         notif = mcp_notification_new ("notifications/initialized");
         node = mcp_message_to_json (MCP_MESSAGE (notif));
         mcp_transport_send_message_async (self->transport, node, NULL,
-                                          on_initialized_notification_sent, self);
+                                          on_initialized_notification_sent,
+                                          g_object_ref (self->connect_task));
     }
 }
 
@@ -1790,7 +1823,7 @@ handle_response (McpClient   *self,
 
     if (task == NULL)
     {
-        g_warning ("Received response for unknown request: %s", id);
+        g_debug ("Received response for unknown or cancelled request: %s", id);
         return;
     }
 
@@ -1936,10 +1969,10 @@ handle_error (McpClient        *self,
         return;
     }
 
-    task = mcp_session_take_pending_request (MCP_SESSION (self), id);
+    task = take_client_request (MCP_SESSION (self), id);
     if (task == NULL)
     {
-        g_warning ("Received error response for unknown request: %s", id);
+        g_debug ("Received error response for unknown or cancelled request: %s", id);
         return;
     }
 

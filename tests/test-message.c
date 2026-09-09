@@ -746,6 +746,32 @@ test_numeric_id_stays_numeric (void)
     g_assert_null (strstr (out, "\"id\":\"0\""));
 }
 
+/* Fractional and exponent IDs must retain both their value and JSON type. */
+static void
+test_double_id_stays_numeric (void)
+{
+    const gchar *wires[] = {
+        "{\"jsonrpc\":\"2.0\",\"id\":1.23456789012345,\"method\":\"ping\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":1e30,\"method\":\"ping\"}"
+    };
+    guint i;
+
+    for (i = 0; i < G_N_ELEMENTS (wires); i++)
+    {
+        g_autoptr(JsonParser) parser = json_parser_new ();
+        g_autoptr(McpMessage) message = mcp_message_parse (wires[i], NULL);
+        g_autoptr(JsonNode) output = mcp_message_to_json (message);
+        JsonNode *expected;
+        JsonNode *actual;
+
+        g_assert_true (json_parser_load_from_data (parser, wires[i], -1, NULL));
+        expected = json_object_get_member (json_node_get_object (json_parser_get_root (parser)), "id");
+        actual = json_object_get_member (json_node_get_object (output), "id");
+        g_assert_true (json_node_get_value_type (actual) == G_TYPE_DOUBLE);
+        g_assert_cmpfloat (json_node_get_double (actual), ==, json_node_get_double (expected));
+    }
+}
+
 static void
 test_string_id_stays_a_string (void)
 {
@@ -966,6 +992,7 @@ main (int   argc,
     /* Round-trip tests */
     g_test_add_func ("/mcp/message/id/numeric-stays-numeric",
                      test_numeric_id_stays_numeric);
+    g_test_add_func ("/mcp/message/id/double-stays-numeric", test_double_id_stays_numeric);
     g_test_add_func ("/mcp/message/id/string-stays-string",
                      test_string_id_stays_a_string);
     g_test_add_func ("/mcp/message/id/error-matches-type",

@@ -191,6 +191,7 @@ DEPS        := $(OBJS:.o=.d)
 # introspection -- g-ir-scanner's C parser does not understand
 # g_autoptr() in a declaration and reports a syntax error on it.
 PRIVATE_HDRS := $(SRCDIR)/mcp-json-util.h \
+                $(SRCDIR)/mcp-request-util.h \
                 $(SRCDIR)/mcp-listen-util.h \
                 $(SRCDIR)/mcp-backoff-util.h
 

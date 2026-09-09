@@ -584,6 +584,85 @@ test_tool_argument_envelope (WireFixture *fixture, gconstpointer user_data)
                                                "code"), ==, MCP_ERROR_INVALID_PARAMS);
 }
 
+/* A stopped server must complete and release outstanding outbound tasks. */
+static void
+test_remove_async_tool (WireFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(McpTool) tool = mcp_tool_new ("replace", "Replacement probe");
+    g_autoptr(JsonParser) parser = NULL;
+    JsonObject *reply;
+
+    (void) user_data;
+    mcp_server_add_async_tool (fixture->server, tool, async_tool_handler, NULL, NULL);
+    g_assert_true (mcp_server_remove_tool (fixture->server, "replace"));
+    mcp_server_add_tool (fixture->server, tool, NULL, NULL, NULL);
+    dispatch_json (fixture, "{\"jsonrpc\":\"2.0\",\"id\":74,\"method\":\"tools/call\",\"params\":{\"name\":\"replace\"}}");
+    reply = pump_for_reply (fixture, 74, &parser);
+    g_assert_false (json_object_has_member (json_object_get_object_member (reply, "result"), "task"));
+}
+
+static void
+on_roots_closed (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    gboolean *completed = user_data;
+    g_autoptr(GError) error = NULL;
+    GList *roots = mcp_server_list_roots_finish (MCP_SERVER (source), result, &error);
+
+    g_assert_null (roots);
+    g_assert_error (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED);
+    *completed = TRUE;
+}
+
+static void
+test_pending_roots_shutdown (WireFixture *fixture, gconstpointer user_data)
+{
+    gboolean completed = FALSE;
+    gint64 deadline;
+
+    (void) user_data;
+    mcp_server_list_roots_async (fixture->server, NULL, on_roots_closed, &completed);
+    g_assert_cmpuint (mcp_session_get_pending_request_count (MCP_SESSION (fixture->server)), ==, 1);
+    mcp_server_stop (fixture->server);
+    deadline = g_get_monotonic_time () + G_USEC_PER_SEC;
+    while (!completed && g_get_monotonic_time () < deadline)
+        g_main_context_iteration (fixture->context, FALSE);
+    g_assert_true (completed);
+    g_assert_cmpuint (mcp_session_get_pending_request_count (MCP_SESSION (fixture->server)), ==, 0);
+}
+
+/* Peer disconnect must provide the same completion guarantees as stop(). */
+static void
+test_pending_roots_disconnect (WireFixture *fixture, gconstpointer user_data)
+{
+    gboolean completed = FALSE;
+    gint64 deadline;
+
+    (void) user_data;
+    mcp_server_list_roots_async (fixture->server, NULL, on_roots_closed, &completed);
+    mcp_mux_transport_set_connected (fixture->transport, FALSE);
+    deadline = g_get_monotonic_time () + G_USEC_PER_SEC;
+    while (!completed && g_get_monotonic_time () < deadline)
+        g_main_context_iteration (fixture->context, FALSE);
+    g_assert_true (completed);
+    g_assert_cmpuint (mcp_session_get_pending_request_count (MCP_SESSION (fixture->server)), ==, 0);
+}
+
+/* Invalid envelopes are valid JSON and therefore are not parse errors. */
+static void
+test_invalid_envelope_code (WireFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(JsonParser) parser = json_parser_new ();
+    JsonObject *reply;
+    guint before = fixture->sent->len;
+
+    (void) user_data;
+    dispatch_json (fixture, "{\"jsonrpc\":\"9.0\",\"id\":7,\"method\":\"ping\"}");
+    pump_for_frames (fixture, before + 1);
+    g_assert_true (json_parser_load_from_data (parser, g_ptr_array_index (fixture->sent, before), -1, NULL));
+    reply = json_node_get_object (json_parser_get_root (parser));
+    g_assert_cmpint (json_object_get_int_member (json_object_get_object_member (reply, "error"), "code"), ==, MCP_ERROR_INVALID_REQUEST);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -593,6 +672,10 @@ main (int argc, char *argv[])
     g_test_add (path, WireFixture, NULL, wire_fixture_set_up, func, wire_fixture_tear_down)
 
     WIRE_TEST ("/mcp/server-wire/ping-serialises", test_ping_serialises);
+    WIRE_TEST ("/mcp/server-wire/pending-roots-shutdown", test_pending_roots_shutdown);
+    WIRE_TEST ("/mcp/server-wire/pending-roots-disconnect", test_pending_roots_disconnect);
+    WIRE_TEST ("/mcp/server-wire/remove-async-tool", test_remove_async_tool);
+    WIRE_TEST ("/mcp/server-wire/invalid-envelope-code", test_invalid_envelope_code);
     WIRE_TEST ("/mcp/server-wire/handshake-order", test_handshake_order);
     WIRE_TEST ("/mcp/server-wire/tool-argument-envelope", test_tool_argument_envelope);
     WIRE_TEST ("/mcp/server-wire/resources-subscribe-serialises",

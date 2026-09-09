@@ -1,6 +1,8 @@
 * MCP Client Guide
 This guide explains how to create MCP clients using mcp-glib.
 
+Outbound operations honor their =GCancellable= even when a peer does not reply: cancellation completes locally on the operation's main context and removes the pending request. Send errors propagate to the original operation instead of leaving it pending. An already transmitted operation may continue at the peer; late replies are ignored. Disconnect, cancellation, a rejected initialize request, and a failed initialize send release all handshake ownership so another connection attempt can proceed. Completion callbacks from an earlier connection attempt cannot finish a newer one.
+
 ** Overview
 An MCP client connects to servers to access their capabilities:
 

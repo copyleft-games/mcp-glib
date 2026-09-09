@@ -10,6 +10,7 @@
 #include "mcp-version.h"
 #include "mcp-task.h"
 #include "mcp-json-util.h"
+#include "mcp-request-util.h"
 #undef MCP_COMPILATION
 
 /**
@@ -778,6 +779,9 @@ mcp_server_stop (McpServer *self)
     g_return_if_fail (MCP_IS_SERVER (self));
 
     mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_CLOSING);
+    /* Complete outbound sampling/roots calls even when the transport was
+     * already closed and will not emit another state transition. */
+    mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
     if (self->start_task != NULL)
     {
         g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
@@ -815,6 +819,10 @@ mcp_server_add_tool (McpServer      *self,
 
     name = mcp_tool_get_name (tool);
 
+    /* Replacing metadata also replaces dispatch ownership, including a
+     * previous async registration or an intentionally empty handler. */
+    g_hash_table_remove (self->tool_handlers, name);
+    g_hash_table_remove (self->async_tool_handlers, name);
     g_hash_table_insert (self->tools, g_strdup (name), g_object_ref (tool));
 
     if (handler != NULL)
@@ -841,6 +849,7 @@ mcp_server_remove_tool (McpServer   *self,
     g_return_val_if_fail (name != NULL, FALSE);
 
     g_hash_table_remove (self->tool_handlers, name);
+    g_hash_table_remove (self->async_tool_handlers, name);
     return g_hash_table_remove (self->tools, name);
 }
 
@@ -1214,7 +1223,7 @@ on_message_received (McpTransport *transport,
     if (msg == NULL)
     {
         g_debug ("Failed to parse message: %s", error->message);
-        send_error_response (self, NULL, MCP_ERROR_PARSE_ERROR,
+        send_error_response (self, NULL, MCP_ERROR_INVALID_REQUEST,
                              error->message, NULL);
         return;
     }
@@ -1251,6 +1260,7 @@ on_state_changed (McpTransport      *transport,
     if (new_state == MCP_TRANSPORT_STATE_DISCONNECTED)
     {
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_DISCONNECTED);
+        mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
         g_signal_emit (self, signals[SIGNAL_CLIENT_DISCONNECTED], 0);
         if (self->main_loop != NULL)
         {
@@ -1260,6 +1270,7 @@ on_state_changed (McpTransport      *transport,
     else if (new_state == MCP_TRANSPORT_STATE_ERROR)
     {
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_ERROR);
+        mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
         if (self->main_loop != NULL)
         {
             g_main_loop_quit (self->main_loop);
@@ -2290,7 +2301,7 @@ handle_response (McpServer   *self,
     task = mcp_session_take_pending_request (MCP_SESSION (self), id);
     if (task == NULL)
     {
-        g_warning ("Received response for unknown request: %s", id);
+        g_debug ("Received response for unknown or cancelled request: %s", id);
         return;
     }
 
@@ -2326,7 +2337,7 @@ handle_error (McpServer        *self,
     task = mcp_session_take_pending_request (MCP_SESSION (self), id);
     if (task == NULL)
     {
-        g_warning ("Received error response for unknown request: %s", id);
+        g_debug ("Received error response for unknown or cancelled request: %s", id);
         return;
     }
 
@@ -2350,14 +2361,8 @@ send_request (McpServer  *self,
               McpRequest *request,
               GTask      *task)
 {
-    g_autoptr(JsonNode) node = NULL;
-    const gchar *id;
-
-    id = mcp_request_get_id (request);
-    mcp_session_add_pending_request (MCP_SESSION (self), id, task);
-
-    node = mcp_message_to_json (MCP_MESSAGE (request));
-    mcp_transport_send_message_async (self->transport, node, NULL, NULL, NULL);
+    mcp_send_tracked_request (MCP_SESSION (self), self->transport, request,
+                              task, mcp_session_take_pending_request);
 }
 
 /* Tasks API Implementation */
@@ -2388,6 +2393,8 @@ mcp_server_add_async_tool (McpServer          *self,
     name = mcp_tool_get_name (tool);
 
     /* Add tool to the regular tools list */
+    g_hash_table_remove (self->tool_handlers, name);
+    g_hash_table_remove (self->async_tool_handlers, name);
     g_hash_table_insert (self->tools, g_strdup (name), g_object_ref (tool));
 
     /* Add async handler */

@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 #include <errno.h>
+#include <math.h>
 #include "mcp-message.h"
 #include "mcp-enums.h"
 #include "mcp-error.h"
@@ -246,6 +247,16 @@ mcp_message_add_id_value (JsonBuilder *builder,
             json_builder_add_int_value (builder, n);
             return;
         }
+        /* Numeric IDs may use a fraction or exponent. Keep them numeric and
+         * round-trip the parsed double rather than silently quoting it. */
+        {
+            gdouble value = g_ascii_strtod (id, &end);
+            if (end != id && *end == '\0' && isfinite (value))
+            {
+                json_builder_add_double_value (builder, value);
+                return;
+            }
+        }
     }
 
     json_builder_add_string_value (builder, id);
@@ -337,7 +348,9 @@ classify_id (JsonObject  *obj,
     {
         if (out_id != NULL)
         {
-            *out_id = g_strdup_printf ("%g", json_node_get_double (id_node));
+            gchar buffer[G_ASCII_DTOSTR_BUF_SIZE];
+            *out_id = g_strdup (g_ascii_dtostr (buffer, sizeof buffer,
+                                              json_node_get_double (id_node)));
         }
         if (out_is_number != NULL)
         {

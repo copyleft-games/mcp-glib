@@ -60,6 +60,14 @@ pump (GMainContext *context,
  * reason is whichever return happened to be second.
  */
 static void
+accept_without_reply (McpMuxTransport *transport, JsonNode *frame, gpointer data)
+{
+    (void) transport;
+    (void) frame;
+    (void) data;
+}
+
+static void
 test_failed_handshake_returns_the_task_once (void)
 {
     g_autoptr(GMainContext) context = g_main_context_new ();
@@ -71,6 +79,7 @@ test_failed_handshake_returns_the_task_once (void)
     g_main_context_push_thread_default (context);
 
     transport = mcp_mux_transport_new (context);
+    mcp_mux_transport_set_send_callback (transport, accept_without_reply, NULL, NULL);
     mcp_mux_transport_set_connected (transport, TRUE);
 
     client = mcp_client_new ("handshake-test", "1.0.0");
