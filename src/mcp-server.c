@@ -1274,14 +1274,24 @@ on_transport_error (McpTransport *transport,
 {
     g_autoptr(McpServer) self = g_object_ref (MCP_SERVER (user_data));
 
+    /* A malformed NDJSON frame has no request ID, but it is still a protocol
+     * error requiring a response. Framing remains synchronized at the newline;
+     * do not fail a pending initialize or poison the synchronous run result. */
+    if (g_error_matches (error, MCP_ERROR, MCP_ERROR_PARSE_ERROR))
+    {
+        g_debug ("Invalid peer JSON: %s", error->message);
+        send_error_response (self, NULL, MCP_ERROR_PARSE_ERROR,
+                             "Parse error", NULL);
+        return;
+    }
+
     /* A peer disconnecting (clean EOF) is routine for a server, not a fault;
      * log it at debug level so a busy server churning client connections does
      * not flood the logs (or abort g_test runs) with warnings. Genuine
      * transport faults still warn. */
     if (g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
         g_debug ("Transport closed: %s", error->message);
-    else if (g_error_matches (error, MCP_ERROR, MCP_ERROR_PARSE_ERROR) ||
-             g_error_matches (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST))
+    else if (g_error_matches (error, MCP_ERROR, MCP_ERROR_INVALID_REQUEST))
         g_debug ("Invalid peer input: %s", error->message);
     else
         g_warning ("Transport error: %s", error->message);
@@ -1309,7 +1319,16 @@ send_message_cb (GObject      *source,
 
     if (!mcp_transport_send_message_finish (MCP_TRANSPORT (source), result, &error))
     {
-        g_warning ("Failed to send message: %s", error->message);
+        /* A peer leaving or an explicit stop can cancel a queued reply after
+         * its bytes were written but before the completion is dispatched. */
+        if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) ||
+            g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CLOSED) ||
+            g_error_matches (error, G_IO_ERROR, G_IO_ERROR_BROKEN_PIPE) ||
+            g_error_matches (error, G_IO_ERROR, G_IO_ERROR_NO_SPACE) ||
+            g_error_matches (error, MCP_ERROR, MCP_ERROR_CONNECTION_CLOSED))
+            g_debug ("Reply canceled during shutdown: %s", error->message);
+        else
+            g_warning ("Failed to send message: %s", error->message);
         g_error_free (error);
     }
 }

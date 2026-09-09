@@ -96,6 +96,9 @@ stdio_fixture_set_up (StdioFixture  *fixture,
     g_signal_connect (fixture->transport, "error",
                       G_CALLBACK (on_error), fixture);
 
+    /* The server integration fixture owns connecting the transport itself. */
+    if (user_data != NULL) return;
+
     mcp_transport_connect_async (MCP_TRANSPORT (fixture->transport),
                                  NULL, NULL, NULL);
 
@@ -576,6 +579,81 @@ test_bounded_message_count (StdioFixture *fixture, gconstpointer user_data)
     g_assert_cmpuint (results.completed, ==, 257);
 }
 
+/* Exercise parser failures through real pipes, both before and after the
+ * handshake. Every malformed line receives a null-ID -32700 response, and
+ * subsequent requests still complete on the same connection. */
+static void
+test_server_parse_recovery (StdioFixture *fixture, gconstpointer user_data)
+{
+    g_autoptr(McpServer) server = mcp_server_new ("parse-test", "1");
+    g_autoptr(GString) replies = g_string_new (NULL);
+    g_auto(GStrv) lines = NULL;
+    const gchar *requests =
+        "not-json\n"
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+        "\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},"
+        "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n"
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"
+        "also-not-json\n"
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n";
+    gint64 deadline;
+    guint errors = 0;
+    guint successes = 0;
+    guint i;
+
+    (void) user_data;
+    mcp_server_set_transport (server, MCP_TRANSPORT (fixture->transport));
+    mcp_server_start_async (server, NULL, NULL, NULL);
+    pump (10);
+    g_assert_cmpint (mcp_session_get_state (MCP_SESSION (server)), ==,
+                    MCP_SESSION_STATE_CONNECTING);
+    g_assert_cmpint (write (fixture->to_transport, requests, strlen (requests)), ==,
+                    (gssize) strlen (requests));
+    g_assert_cmpint (fcntl (fixture->from_transport, F_SETFL, O_NONBLOCK), ==, 0);
+    deadline = g_get_monotonic_time () + 2 * G_USEC_PER_SEC;
+    while (g_get_monotonic_time () < deadline)
+    {
+        gchar buffer[4096];
+        gssize got;
+        guint count = 0;
+        const gchar *cursor;
+
+        g_main_context_iteration (NULL, FALSE);
+        got = read (fixture->from_transport, buffer, sizeof buffer);
+        if (got > 0) g_string_append_len (replies, buffer, got);
+        for (cursor = replies->str; *cursor != '\0'; cursor++)
+            if (*cursor == '\n') count++;
+        if (count == 4) break;
+        g_usleep (500);
+    }
+    lines = g_strsplit (replies->str, "\n", -1);
+    for (i = 0; lines[i] != NULL && *lines[i] != '\0'; i++)
+    {
+        g_autoptr(JsonParser) parser = json_parser_new ();
+        JsonObject *reply;
+
+        g_assert_true (json_parser_load_from_data (parser, lines[i], -1, NULL));
+        reply = json_node_get_object (json_parser_get_root (parser));
+        if (json_object_has_member (reply, "error"))
+        {
+            g_assert_true (JSON_NODE_HOLDS_NULL (json_object_get_member (reply, "id")));
+            g_assert_cmpint (json_object_get_int_member (
+                json_object_get_object_member (reply, "error"), "code"), ==, -32700);
+            errors++;
+        }
+        else
+        {
+            g_assert_true (json_object_has_member (reply, "result"));
+            g_assert_cmpint (json_object_get_int_member (reply, "id"), ==, successes + 1);
+            successes++;
+        }
+    }
+    g_assert_cmpuint (errors, ==, 2);
+    g_assert_cmpuint (successes, ==, 2);
+    g_assert_cmpint (mcp_session_get_state (MCP_SESSION (server)), ==, MCP_SESSION_STATE_READY);
+    mcp_server_stop (server);
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -586,6 +664,8 @@ main (int argc, char *argv[])
                 stdio_fixture_tear_down)
 
     STDIO_TEST ("/mcp/stdio/reads-a-line", test_reads_a_line);
+    g_test_add ("/mcp/stdio/server-parse-recovery", StdioFixture, GINT_TO_POINTER (1),
+                stdio_fixture_set_up, test_server_parse_recovery, stdio_fixture_tear_down);
     STDIO_TEST ("/mcp/stdio/bounded-output", test_bounded_output);
     STDIO_TEST ("/mcp/stdio/bounded-message-count", test_bounded_message_count);
     STDIO_TEST ("/mcp/stdio/reads-a-line-split-across-reads",
