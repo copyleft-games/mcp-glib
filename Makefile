@@ -193,7 +193,8 @@ DEPS        := $(OBJS:.o=.d)
 PRIVATE_HDRS := $(SRCDIR)/mcp-json-util.h \
                 $(SRCDIR)/mcp-request-util.h \
                 $(SRCDIR)/mcp-listen-util.h \
-                $(SRCDIR)/mcp-backoff-util.h
+                $(SRCDIR)/mcp-backoff-util.h \
+                $(SRCDIR)/mcp-tool-call-private.h
 
 HDRS        := $(filter-out $(PRIVATE_HDRS),$(wildcard $(SRCDIR)/*.h))
 

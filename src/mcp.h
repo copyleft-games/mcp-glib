@@ -47,6 +47,7 @@ G_BEGIN_DECLS
 #include "mcp-resource.h"
 #include "mcp-prompt.h"
 #include "mcp-task.h"
+#include "mcp-tool-call.h"
 
 /* Sampling types */
 #include "mcp-sampling.h"

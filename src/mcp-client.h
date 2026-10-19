@@ -213,6 +213,47 @@ void mcp_client_call_tool_async (McpClient           *self,
                                  gpointer             user_data);
 
 /**
+ * mcp_client_call_tool_with_progress_async:
+ * @self: an #McpClient
+ * @name: the tool name
+ * @arguments: (nullable): the tool arguments
+ * @progress_token: (nullable): a token naming this call in
+ *   notifications/progress (#McpClient::progress), unique among the
+ *   client's requests in flight
+ * @cancellable: (nullable): a #GCancellable
+ * @callback: (scope async) (closure user_data): callback to call when complete
+ * @user_data: user data for @callback
+ *
+ * Calls a tool like mcp_client_call_tool_async() and asks the server for
+ * progress notifications while it runs (`_meta.progressToken`).  A
+ * server answers a deferred tool (mcp_server_add_deferred_tool()) when
+ * its work ends, which may take long: there is no timeout.  Finish with
+ * mcp_client_call_tool_with_progress_finish() (or
+ * mcp_client_call_tool_finish(), the same).
+ */
+void mcp_client_call_tool_with_progress_async (McpClient           *self,
+                                               const gchar         *name,
+                                               JsonObject          *arguments,
+                                               const gchar         *progress_token,
+                                               GCancellable        *cancellable,
+                                               GAsyncReadyCallback  callback,
+                                               gpointer             user_data);
+
+/**
+ * mcp_client_call_tool_with_progress_finish:
+ * @self: an #McpClient
+ * @result: the #GAsyncResult
+ * @error: (nullable): return location for a #GError
+ *
+ * Completes mcp_client_call_tool_with_progress_async().
+ *
+ * Returns: (transfer full) (nullable): the #McpToolResult, or %NULL on error
+ */
+McpToolResult *mcp_client_call_tool_with_progress_finish (McpClient     *self,
+                                                          GAsyncResult  *result,
+                                                          GError       **error);
+
+/**
  * mcp_client_call_tool_finish:
  * @self: an #McpClient
  * @result: the #GAsyncResult

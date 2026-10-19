@@ -32,6 +32,7 @@
 #include "mcp-sampling.h"
 #include "mcp-root.h"
 #include "mcp-completion.h"
+#include "mcp-tool-call.h"
 
 G_BEGIN_DECLS
 
@@ -128,6 +129,22 @@ typedef McpCompletionResult *(*McpCompletionHandler) (McpServer   *server,
                                                       const gchar *argument_name,
                                                       const gchar *argument_value,
                                                       gpointer     user_data);
+
+/**
+ * McpDeferredToolHandler:
+ * @server: the #McpServer
+ * @call: (transfer none): the call; keep a reference to answer it later
+ * @user_data: user data
+ *
+ * Callback for a tool that answers later (mcp_server_add_deferred_tool()).
+ * The handler starts the work and returns; when the work is done it
+ * calls mcp_tool_call_return_result() (or mcp_tool_call_return_error()),
+ * which sends the tools/call response.  It may also answer at once from
+ * inside the handler.
+ */
+typedef void (*McpDeferredToolHandler) (McpServer   *server,
+                                        McpToolCall *call,
+                                        gpointer     user_data);
 
 /**
  * mcp_server_new:
@@ -270,6 +287,41 @@ void mcp_server_add_tool (McpServer      *self,
                           McpToolHandler  handler,
                           gpointer        user_data,
                           GDestroyNotify  destroy);
+
+/**
+ * mcp_server_add_deferred_tool:
+ * @self: an #McpServer
+ * @tool: (transfer none): the #McpTool to add
+ * @handler: (scope notified) (closure user_data) (destroy destroy): the handler
+ * @user_data: user data for @handler
+ * @destroy: (nullable): destroy notify for @user_data
+ *
+ * Adds a tool whose calls are answered when the work ends rather than
+ * when the handler returns: the handler receives an #McpToolCall and
+ * completes it later from the main loop.  The tools/call request stays
+ * open meanwhile, so a client simply awaits the result; the call can
+ * send notifications/progress when the client asked for them
+ * (`_meta.progressToken`), and notifications/cancelled or the
+ * connection closing cancels it (#McpToolCall::cancelled).  Unlike
+ * mcp_server_add_async_tool() this needs nothing from the client beyond
+ * plain tools/call.
+ */
+void mcp_server_add_deferred_tool (McpServer              *self,
+                                   McpTool                *tool,
+                                   McpDeferredToolHandler  handler,
+                                   gpointer                user_data,
+                                   GDestroyNotify          destroy);
+
+/**
+ * mcp_server_get_pending_tool_call_count:
+ * @self: an #McpServer
+ *
+ * Gets how many deferred tool calls are in flight (neither completed nor
+ * cancelled).
+ *
+ * Returns: the number of calls
+ */
+guint mcp_server_get_pending_tool_call_count (McpServer *self);
 
 /**
  * mcp_server_remove_tool:

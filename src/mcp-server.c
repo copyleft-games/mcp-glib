@@ -11,6 +11,7 @@
 #include "mcp-task.h"
 #include "mcp-json-util.h"
 #include "mcp-request-util.h"
+#include "mcp-tool-call-private.h"
 #undef MCP_COMPILATION
 
 /**
@@ -28,6 +29,7 @@ typedef struct
     gpointer        handler;
     gpointer        user_data;
     GDestroyNotify  destroy;
+    gboolean        deferred;   /* an McpDeferredToolHandler */
 } HandlerData;
 
 static void
@@ -88,6 +90,9 @@ struct _McpServer
     GHashTable *task_results;
     /* Task counter for generating unique IDs */
     guint64 task_counter;
+
+    /* Deferred tool calls in flight: request id -> McpToolCall */
+    GHashTable *pending_calls;
 
     /* Completion handler */
     gpointer        completion_handler;
@@ -278,6 +283,40 @@ static void send_error_response (McpServer   *self,
 static void send_notification   (McpServer   *self,
                                  const gchar *method,
                                  JsonNode    *params);
+static void send_notification   (McpServer   *self,
+                                 const gchar *method,
+                                 JsonNode    *params);
+
+/*
+ * cancel_pending_calls:
+ * The connection is gone (or the server is): every deferred call still in
+ * flight is cancelled, so its handler stops and nothing is answered.
+ */
+static void
+cancel_pending_calls (McpServer *self)
+{
+    g_autoptr(GPtrArray) calls = NULL;
+    GHashTableIter iter;
+    gpointer value;
+    guint i;
+
+    if (self->pending_calls == NULL || g_hash_table_size (self->pending_calls) == 0)
+    {
+        return;
+    }
+    /* handlers may drop their calls from the signal: take the table first */
+    calls = g_ptr_array_new_with_free_func (g_object_unref);
+    g_hash_table_iter_init (&iter, self->pending_calls);
+    while (g_hash_table_iter_next (&iter, NULL, &value))
+    {
+        g_ptr_array_add (calls, g_object_ref (value));
+    }
+    g_hash_table_remove_all (self->pending_calls);
+    for (i = 0; i < calls->len; i++)
+    {
+        _mcp_tool_call_cancel (MCP_TOOL_CALL (g_ptr_array_index (calls, i)));
+    }
+}
 
 static void
 mcp_server_dispose (GObject *object)
@@ -319,6 +358,11 @@ mcp_server_dispose (GObject *object)
     g_clear_pointer (&self->prompt_handlers, g_hash_table_unref);
 
     g_clear_pointer (&self->async_tool_handlers, g_hash_table_unref);
+    if (self->pending_calls != NULL)
+    {
+        cancel_pending_calls (self);
+        g_clear_pointer (&self->pending_calls, g_hash_table_unref);
+    }
     g_clear_pointer (&self->tasks, g_hash_table_unref);
     g_clear_pointer (&self->task_results, g_hash_table_unref);
 
@@ -553,6 +597,8 @@ mcp_server_init (McpServer *self)
                                                  g_free,
                                                  (GDestroyNotify) mcp_tool_result_unref);
     self->task_counter = 0;
+    self->pending_calls = g_hash_table_new_full (g_str_hash, g_str_equal,
+                                                 g_free, g_object_unref);
 }
 
 /*
@@ -782,6 +828,7 @@ mcp_server_stop (McpServer *self)
     /* Complete outbound sampling/roots calls even when the transport was
      * already closed and will not emit another state transition. */
     mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
+    cancel_pending_calls (self);
     if (self->start_task != NULL)
     {
         g_autoptr(GTask) task = g_steal_pointer (&self->start_task);
@@ -851,6 +898,81 @@ mcp_server_remove_tool (McpServer   *self,
     g_hash_table_remove (self->tool_handlers, name);
     g_hash_table_remove (self->async_tool_handlers, name);
     return g_hash_table_remove (self->tools, name);
+}
+
+void
+mcp_server_add_deferred_tool (McpServer              *self,
+                              McpTool                *tool,
+                              McpDeferredToolHandler  handler,
+                              gpointer                user_data,
+                              GDestroyNotify          destroy)
+{
+    HandlerData *hd;
+
+    g_return_if_fail (MCP_IS_SERVER (self));
+    g_return_if_fail (MCP_IS_TOOL (tool));
+    g_return_if_fail (handler != NULL);
+
+    /* the metadata and the dispatch as for any tool, then the handler
+     * marked deferred: handle_tools_call() hands it an McpToolCall */
+    mcp_server_add_tool (self, tool, NULL, NULL, NULL);
+    hd = g_new0 (HandlerData, 1);
+    hd->handler = handler;
+    hd->user_data = user_data;
+    hd->destroy = destroy;
+    hd->deferred = TRUE;
+    g_hash_table_insert (self->tool_handlers, g_strdup (mcp_tool_get_name (tool)), hd);
+}
+
+guint
+mcp_server_get_pending_tool_call_count (McpServer *self)
+{
+    g_return_val_if_fail (MCP_IS_SERVER (self), 0);
+
+    return self->pending_calls != NULL ? g_hash_table_size (self->pending_calls) : 0;
+}
+
+void
+_mcp_server_finish_tool_call (McpServer   *server,
+                              McpToolCall *call,
+                              JsonNode    *result,
+                              gint         error_code,
+                              const gchar *error_message)
+{
+    g_autoptr(JsonNode) owned = result;
+    McpRequest *request;
+
+    g_return_if_fail (MCP_IS_SERVER (server));
+    g_return_if_fail (MCP_IS_TOOL_CALL (call));
+
+    request = _mcp_tool_call_get_request (call);
+    /* only a call this server still has in flight is answered: one the
+     * connection's end already cancelled is not */
+    if (server->pending_calls == NULL ||
+        g_hash_table_lookup (server->pending_calls, mcp_request_get_id (request)) != call)
+    {
+        return;
+    }
+    if (error_message != NULL)
+    {
+        send_error_response (server, request, error_code, error_message, NULL);
+    }
+    else
+    {
+        send_response (server, request, g_steal_pointer (&owned));
+    }
+    g_hash_table_remove (server->pending_calls, mcp_request_get_id (request));
+}
+
+void
+_mcp_server_send_tool_call_progress (McpServer *server,
+                                     JsonNode  *params)
+{
+    g_autoptr(JsonNode) owned = params;
+
+    g_return_if_fail (MCP_IS_SERVER (server));
+
+    send_notification (server, "notifications/progress", owned);
 }
 
 GList *
@@ -1261,6 +1383,7 @@ on_state_changed (McpTransport      *transport,
     {
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_DISCONNECTED);
         mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
+        cancel_pending_calls (self);
         g_signal_emit (self, signals[SIGNAL_CLIENT_DISCONNECTED], 0);
         if (self->main_loop != NULL)
         {
@@ -1271,6 +1394,7 @@ on_state_changed (McpTransport      *transport,
     {
         mcp_session_set_state (MCP_SESSION (self), MCP_SESSION_STATE_ERROR);
         mcp_session_cancel_all_pending_requests (MCP_SESSION (self), NULL);
+        cancel_pending_calls (self);
         if (self->main_loop != NULL)
         {
             g_main_loop_quit (self->main_loop);
@@ -1688,6 +1812,41 @@ handle_tools_call (McpServer  *self,
 
     /* Regular synchronous tool handler */
     hd = g_hash_table_lookup (self->tool_handlers, name);
+    if (hd != NULL && hd->handler != NULL && hd->deferred)
+    {
+        McpDeferredToolHandler deferred;
+        g_autoptr(McpToolCall) call = NULL;
+        JsonObject *meta;
+        JsonNode *token;
+
+        /* A deferred handler answers later through the call.  Two
+         * in-flight requests may not share an id: the second is refused
+         * rather than answered with the first one's result. */
+        if (g_hash_table_contains (self->pending_calls, mcp_request_get_id (request)))
+        {
+            send_error_response (self, request, MCP_ERROR_INVALID_REQUEST,
+                                 "A request with this id is still in flight", NULL);
+            return;
+        }
+        token = NULL;
+        meta = mcp_json_get_object (params, "_meta");
+        if (meta != NULL && json_object_has_member (meta, "progressToken"))
+        {
+            token = json_object_get_member (meta, "progressToken");
+            if (!JSON_NODE_HOLDS_VALUE (token) ||
+                (json_node_get_value_type (token) != G_TYPE_STRING &&
+                 json_node_get_value_type (token) != G_TYPE_INT64))
+            {
+                token = NULL;
+            }
+        }
+        call = _mcp_tool_call_new (self, request, name, arguments, token);
+        g_hash_table_insert (self->pending_calls, g_strdup (mcp_request_get_id (request)),
+                             g_object_ref (call));
+        deferred = (McpDeferredToolHandler) hd->handler;
+        deferred (self, call, hd->user_data);
+        return;
+    }
     if (hd != NULL && hd->handler != NULL)
     {
         McpToolHandler handler;
@@ -2252,17 +2411,45 @@ handle_notification (McpServer       *self,
          * the server's first sampling/createMessage, a remote lever on
          * work the client never asked about.
          *
-         * Every inbound request is dispatched and answered synchronously
-         * in handle_request(), so by the time a cancellation arrives there
-         * is nothing left in flight to stop.  A long-running call is a
-         * Task, and its cancellation is tasks/cancel.
+         * Inbound requests are answered synchronously in handle_request(),
+         * except tools/call of a deferred tool, which stays in
+         * pending_calls (keyed by the client's own ids) until its handler
+         * completes it.  A Task's cancellation is tasks/cancel.
          */
         params_node = mcp_notification_get_params (notification);
         if (params_node != NULL && JSON_NODE_HOLDS_OBJECT (params_node))
         {
+            g_autofree gchar *number = NULL;
+            JsonNode *id_node;
+            McpToolCall *call;
+
             params = json_node_get_object (params_node);
-            request_id = mcp_json_get_string (params, "requestId");
-            if (request_id != NULL)
+            request_id = NULL;
+            id_node = json_object_get_member (params, "requestId");
+            if (id_node != NULL && JSON_NODE_HOLDS_VALUE (id_node))
+            {
+                if (json_node_get_value_type (id_node) == G_TYPE_STRING)
+                {
+                    request_id = json_node_get_string (id_node);
+                }
+                else if (json_node_get_value_type (id_node) == G_TYPE_INT64)
+                {
+                    number = g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (id_node));
+                    request_id = number;
+                }
+            }
+            /* The only client requests still in flight are deferred tool
+             * calls (mcp_server_add_deferred_tool()): cancel that one, and
+             * answer nothing for it. */
+            call = request_id != NULL ? g_hash_table_lookup (self->pending_calls, request_id) : NULL;
+            if (call != NULL)
+            {
+                g_autoptr(McpToolCall) keep = g_object_ref (call);
+
+                g_hash_table_remove (self->pending_calls, request_id);
+                _mcp_tool_call_cancel (keep);
+            }
+            else if (request_id != NULL)
             {
                 g_debug ("Client cancelled request %s, which has already been answered",
                          request_id);

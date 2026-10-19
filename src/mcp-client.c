@@ -79,6 +79,7 @@ enum
     SIGNAL_LOG_MESSAGE,
     SIGNAL_SAMPLING_REQUESTED,
     SIGNAL_ROOTS_LIST_REQUESTED,
+    SIGNAL_PROGRESS,
     N_SIGNALS
 };
 
@@ -286,6 +287,25 @@ mcp_client_class_init (McpClientClass *klass)
                       0, NULL, NULL, NULL,
                       G_TYPE_NONE, 3,
                       G_TYPE_STRING, G_TYPE_STRING, JSON_TYPE_NODE);
+
+    /**
+     * McpClient::progress:
+     * @self: the #McpClient
+     * @token: the progress token, as text (a number token as its digits)
+     * @progress: the progress so far
+     * @total: the total, or -1 when the server did not say
+     * @message: (nullable): the server's description of the step
+     *
+     * Emitted for notifications/progress, the progress of a request
+     * made with a progress token (mcp_client_call_tool_with_progress_async()).
+     */
+    signals[SIGNAL_PROGRESS] =
+        g_signal_new ("progress",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      0, NULL, NULL, NULL,
+                      G_TYPE_NONE, 4,
+                      G_TYPE_STRING, G_TYPE_DOUBLE, G_TYPE_DOUBLE, G_TYPE_STRING);
 
     /**
      * McpClient::sampling-requested:
@@ -720,6 +740,19 @@ mcp_client_call_tool_async (McpClient           *self,
                             GAsyncReadyCallback  callback,
                             gpointer             user_data)
 {
+    mcp_client_call_tool_with_progress_async (self, name, arguments, NULL, cancellable,
+                                              callback, user_data);
+}
+
+void
+mcp_client_call_tool_with_progress_async (McpClient           *self,
+                                          const gchar         *name,
+                                          JsonObject          *arguments,
+                                          const gchar         *progress_token,
+                                          GCancellable        *cancellable,
+                                          GAsyncReadyCallback  callback,
+                                          gpointer             user_data)
+{
     GTask *task;
     g_autoptr(McpRequest) request = NULL;
     g_autoptr(JsonBuilder) builder = NULL;
@@ -730,6 +763,7 @@ mcp_client_call_tool_async (McpClient           *self,
     g_return_if_fail (name != NULL);
 
     task = g_task_new (self, cancellable, callback, user_data);
+    /* both entry points finish with mcp_client_call_tool_finish() */
     g_task_set_source_tag (task, mcp_client_call_tool_async);
     g_task_set_task_data (task, GINT_TO_POINTER (2), NULL); /* Mark as tools/call */
 
@@ -754,12 +788,29 @@ mcp_client_call_tool_async (McpClient           *self,
         json_builder_add_value (builder, json_node_init_object (json_node_new (JSON_NODE_OBJECT),
                                                                  arguments));
     }
+    if (progress_token != NULL)
+    {
+        /* the server answers progress for this request with the token */
+        json_builder_set_member_name (builder, "_meta");
+        json_builder_begin_object (builder);
+        json_builder_set_member_name (builder, "progressToken");
+        json_builder_add_string_value (builder, progress_token);
+        json_builder_end_object (builder);
+    }
     json_builder_end_object (builder);
     params = json_builder_get_root (builder);
 
     mcp_request_set_params (request, g_steal_pointer (&params));
     send_request (self, request, task);
     g_object_unref (task);
+}
+
+McpToolResult *
+mcp_client_call_tool_with_progress_finish (McpClient     *self,
+                                           GAsyncResult  *result,
+                                           GError       **error)
+{
+    return mcp_client_call_tool_finish (self, result, error);
 }
 
 McpToolResult *
@@ -2026,6 +2077,36 @@ handle_notification (McpClient       *self,
             JsonNode *data = json_object_get_member (obj, "data");
 
             g_signal_emit (self, signals[SIGNAL_LOG_MESSAGE], 0, level, logger, data);
+        }
+    }
+    else if (g_strcmp0 (method, "notifications/progress") == 0)
+    {
+        if (params != NULL && JSON_NODE_HOLDS_OBJECT (params))
+        {
+            JsonObject *obj = json_node_get_object (params);
+            JsonNode *token_node = json_object_get_member (obj, "progressToken");
+            JsonNode *progress_node = json_object_get_member (obj, "progress");
+            JsonNode *total_node = json_object_get_member (obj, "total");
+            g_autofree gchar *token = NULL;
+            gdouble progress;
+            gdouble total;
+
+            if (token_node == NULL || !JSON_NODE_HOLDS_VALUE (token_node) ||
+                progress_node == NULL || !JSON_NODE_HOLDS_VALUE (progress_node))
+            {
+                return;
+            }
+            if (json_node_get_value_type (token_node) == G_TYPE_STRING)
+                token = g_strdup (json_node_get_string (token_node));
+            else if (json_node_get_value_type (token_node) == G_TYPE_INT64)
+                token = g_strdup_printf ("%" G_GINT64_FORMAT, json_node_get_int (token_node));
+            else
+                return;
+            progress = json_node_get_double (progress_node);
+            total = total_node != NULL && JSON_NODE_HOLDS_VALUE (total_node)
+                    ? json_node_get_double (total_node) : -1.0;
+            g_signal_emit (self, signals[SIGNAL_PROGRESS], 0, token, progress, total,
+                           mcp_json_get_string (obj, "message"));
         }
     }
     else if (g_strcmp0 (method, "notifications/tasks/status") == 0)

@@ -154,6 +154,69 @@ mcp_tool_result_add_text (result, "Something went wrong: ...");
 return result;
 #+end_src
 
+*** Tools that answer later
+
+A tool whose work takes time (a game character walking somewhere, a
+build, a download) can keep the client's =tools/call= open and answer
+when the work ends, without blocking the main loop and without anything
+from the client beyond a plain =tools/call=.  Register it with
+=mcp_server_add_deferred_tool()=: the handler receives an =McpToolCall=,
+keeps a reference, starts the work and returns.
+
+#+begin_src C
+static void
+walk_handler (McpServer   *server,
+              McpToolCall *call,
+              gpointer     user_data)
+{
+    Walk *walk = walk_start (mcp_tool_call_get_arguments (call),
+                             mcp_tool_call_get_cancellable (call));
+
+    walk->call = g_object_ref (call);   /* answered in on_walk_done() */
+}
+
+static void
+on_walk_step (Walk *walk)
+{
+    /* notifications/progress, when the client sent _meta.progressToken */
+    mcp_tool_call_send_progress (walk->call, walk->metres, walk->length, "walking");
+}
+
+static void
+on_walk_done (Walk *walk)
+{
+    g_autoptr(McpToolResult) result = mcp_tool_result_new (FALSE);
+
+    mcp_tool_result_add_text (result, "{\"arrived\": true}");
+    mcp_tool_call_return_result (walk->call, result);
+    g_clear_object (&walk->call);
+}
+
+mcp_server_add_deferred_tool (server, tool, walk_handler, NULL, NULL);
+#+end_src
+
+- The call completes once: =mcp_tool_call_return_result()= sends the
+  result, =mcp_tool_call_return_error()= a JSON-RPC error (prefer a
+  result with =isError= for failures the model should read).  The handler
+  may also answer inside itself.
+- =notifications/cancelled= from the client, or the connection closing
+  (=mcp_server_stop()= too), cancels the call: =McpToolCall::cancelled=
+  is emitted and =mcp_tool_call_get_cancellable()= is cancelled.  Nothing
+  is answered for a cancelled call; a late return is ignored.
+- Progress goes out only when the client asked for it with a progress
+  token; its total is omitted when unknown (0 or less).
+- Two requests in flight may not share an id: a second =tools/call= with
+  the id of one still running is refused.
+- =mcp_server_get_pending_tool_call_count()= says how many calls are
+  open.
+- On the HTTP transport a late answer goes out on the SSE stream (the
+  POST was already answered 202), so the client needs that stream open.
+
+A client awaits the call as usual, or asks for progress with
+=mcp_client_call_tool_with_progress_async()= and listens to
+=McpClient::progress=.  Unlike =mcp_server_add_async_tool()= (the
+experimental Tasks API) nothing new is asked of the client.
+
 ** Adding Resources
 Resources are data that AI clients can read.
 
@@ -475,9 +538,10 @@ serialise. Build an empty result with =mcp_json_new_empty_object()=.
 client's id space. The server's own outbound requests (sampling, roots)
 are numbered in a counter of their own that also starts at 1, so looking
 the id up there let a client abort server work it knew nothing about.
-Inbound requests are dispatched and answered synchronously, so by the time
-a cancellation arrives there is nothing in flight to stop; a long-running
-call is a Task, and its cancellation is =tasks/cancel=.
+Inbound requests are dispatched and answered synchronously, except
+=tools/call= of a deferred tool: the server looks the id up among those
+calls (in the client's id space) and cancels that one.  A Task's
+cancellation is =tasks/cancel=.
 
 ** Local server hardening
 

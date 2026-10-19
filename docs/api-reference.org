@@ -101,6 +101,10 @@ McpServerCapabilities *mcp_server_get_capabilities (McpServer *self);
 void mcp_server_add_tool (McpServer *self, McpTool *tool,
                           McpToolHandler handler, gpointer user_data,
                           GDestroyNotify destroy);
+void mcp_server_add_deferred_tool (McpServer *self, McpTool *tool,
+                                   McpDeferredToolHandler handler,
+                                   gpointer user_data, GDestroyNotify destroy);
+guint mcp_server_get_pending_tool_call_count (McpServer *self);
 gboolean mcp_server_remove_tool (McpServer *self, const gchar *name);
 void mcp_server_notify_tools_changed (McpServer *self);
 
@@ -148,6 +152,11 @@ typedef McpToolResult *(*McpToolHandler) (McpServer *server,
                                           JsonObject *arguments,
                                           gpointer user_data);
 
+/* Deferred tool handler: answer later through the McpToolCall */
+typedef void (*McpDeferredToolHandler) (McpServer *server,
+                                        McpToolCall *call,
+                                        gpointer user_data);
+
 /* Resource handler */
 typedef GList *(*McpResourceHandler) (McpServer *server,
                                       const gchar *uri,
@@ -159,6 +168,31 @@ typedef McpPromptResult *(*McpPromptHandler) (McpServer *server,
                                               GHashTable *arguments,
                                               gpointer user_data);
 #+end_src
+
+--------------
+
+** McpToolCall
+
+A =tools/call= request a deferred tool answers later
+(=mcp_server_add_deferred_tool()=; [[file:server-guide.org][server-guide.org]], "Tools that answer later").
+
+#+begin_src C
+const gchar  *mcp_tool_call_get_name (McpToolCall *self);
+JsonObject   *mcp_tool_call_get_arguments (McpToolCall *self);
+const gchar  *mcp_tool_call_get_request_id (McpToolCall *self);
+gboolean      mcp_tool_call_has_progress_token (McpToolCall *self);
+GCancellable *mcp_tool_call_get_cancellable (McpToolCall *self);
+gboolean      mcp_tool_call_is_completed (McpToolCall *self);
+gboolean      mcp_tool_call_is_cancelled (McpToolCall *self);
+void mcp_tool_call_send_progress (McpToolCall *self, gdouble progress,
+                                  gdouble total, const gchar *message);
+void mcp_tool_call_return_result (McpToolCall *self, McpToolResult *result);
+void mcp_tool_call_return_error (McpToolCall *self, gint code, const gchar *message);
+#+end_src
+
+| Signal      | Description                                                        |
+|-------------+--------------------------------------------------------------------|
+| =cancelled= | The client cancelled the request, or the connection closed, before it completed |
 
 --------------
 
@@ -200,6 +234,15 @@ GList *mcp_client_list_tools_finish (McpClient *self, GAsyncResult *result,
 void mcp_client_call_tool_async (McpClient *self, const gchar *name,
                                  JsonObject *arguments, GCancellable *cancellable,
                                  GAsyncReadyCallback callback, gpointer user_data);
+void mcp_client_call_tool_with_progress_async (McpClient *self, const gchar *name,
+                                               JsonObject *arguments,
+                                               const gchar *progress_token,
+                                               GCancellable *cancellable,
+                                               GAsyncReadyCallback callback,
+                                               gpointer user_data);
+McpToolResult *mcp_client_call_tool_with_progress_finish (McpClient *self,
+                                                          GAsyncResult *result,
+                                                          GError **error);
 McpToolResult *mcp_client_call_tool_finish (McpClient *self, GAsyncResult *result,
                                             GError **error);
 
@@ -238,6 +281,7 @@ McpPromptResult *mcp_client_get_prompt_finish (McpClient *self, GAsyncResult *re
 | =resources-changed= | Server resources changed    |
 | =prompts-changed=   | Server prompts changed      |
 | =resource-updated=  | Subscribed resource updated |
+| =progress=          | notifications/progress for a request made with a progress token (token, progress, total or -1, message) |
 
 --------------
 

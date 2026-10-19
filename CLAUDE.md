@@ -119,6 +119,7 @@ mcp-glib/
 | `McpResourceTemplate` | URI template for dynamic resources |
 | `McpPrompt` | Prompt template with arguments |
 | `McpTask` | Long-running operation (experimental) |
+| `McpToolCall` | A tools/call a deferred tool answers later (progress, cancellation) |
 | `McpStdioTransport` | Stdio-based transport |
 
 ### Boxed Types (Reference Counted)
@@ -155,6 +156,12 @@ typedef McpToolResult *(*McpToolHandler) (McpServer *server,
                                           const gchar *name,
                                           JsonObject *arguments,
                                           gpointer user_data);
+
+/* Deferred tool handler - keeps the call, answers later with
+ * mcp_tool_call_return_result () (mcp_server_add_deferred_tool ()) */
+typedef void (*McpDeferredToolHandler) (McpServer *server,
+                                        McpToolCall *call,
+                                        gpointer user_data);
 
 /* Resource handler - returns GList of McpResourceContents */
 typedef GList *(*McpResourceHandler) (McpServer *server,
@@ -208,6 +215,7 @@ make test
 | `test-stdio-transport` | Framing, the line cap, and teardown with I/O in flight |
 | `test-http-sse` | HTTP/WebSocket: SSE streaming, per-instance event state, overlapping POSTs, host binding |
 | `test-backoff` | Reconnect backoff arithmetic |
+| `test-deferred-tools` | Deferred tools over a real socket pair: answers later, progress, errors, cancellation, disconnect |
 
 **No test that passes `JsonNode`s between a mock server and a mock client
 can see a reply that will not serialise**: `json_node_new
