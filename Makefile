@@ -15,6 +15,12 @@
 #   make CROSS=<prefix>       # Explicit cross-compiler prefix
 #=============================================================================
 
+# ldconfig after a live install. Linux rebuilds its cache from ld.so.conf;
+# FreeBSD's ldconfig run bare (or with a directory) *replaces* the loader
+# hints with that list, dropping every directory ports registered (FFmpeg,
+# gcc's runtime, ...) until the next boot -- -m merges LIBDIR in instead.
+LDCONFIG = $(if $(filter FreeBSD,$(shell uname -s)),ldconfig -m $(LIBDIR),ldconfig)
+
 WINDOWS ?= 0
 LINUX_ARM64 ?= 0
 CROSS ?=
@@ -531,7 +537,7 @@ else
 	if [ -f $(BUILDDIR)/$(TYPELIB) ]; then \
 		install -m 644 $(BUILDDIR)/$(TYPELIB) $(DESTDIR)$(TYPELIBDIR)/; \
 	fi
-	ldconfig $(DESTDIR)$(LIBDIR) || true
+	$(if $(filter FreeBSD,$(shell uname -s)),$(LDCONFIG),ldconfig $(DESTDIR)$(LIBDIR)) || true
 endif
 
 uninstall:
