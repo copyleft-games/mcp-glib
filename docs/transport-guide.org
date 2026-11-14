@@ -169,8 +169,8 @@ transport = mcp_http_transport_new ("https://mcp.example.com/api");
 
 *** Configuration
 #+begin_src C
-/* Set authentication token */
-mcp_http_transport_set_auth_token (transport, "Bearer my-token");
+/* Set authentication token (sent as "Authorization: Bearer my-token") */
+mcp_http_transport_set_auth_token (transport, "my-token");
 
 /* Set custom endpoint paths */
 mcp_http_transport_set_message_endpoint (transport, "/mcp/message");
@@ -209,6 +209,14 @@ When implementing an HTTP-based MCP server (not using mcp-glib's server):
 - Send the SSE response with chunked transfer encoding; a response with a
   =Content-Length= ends after its first event
 
+*** Redirects
+A request that carries a credential -- the =auth-token=, or the =Mcp-Session-Id= the server handed out -- is sent with =SOUP_MESSAGE_NO_REDIRECT=. libsoup copies the request headers onto a redirected message: releases before 3.6.6 kept =Authorization= even when =Location= named another host, and every release keeps =Mcp-Session-Id=, which is what lets its holder speak inside the session.
+
+- A POST never follows a redirect, credential or not. libsoup turns a POST answered 301/302/303 into a GET without the body and does not follow a 307/308 for it, so the message was never delivered -- and the transport used to report success, since the status was below 400.
+- A refused redirect is an =MCP_ERROR_TRANSPORT_ERROR= naming what to configure instead: the target's origin (=scheme://host[:port]=) when it is another server, the path when it is the same one. The path and query of another host's =Location= are never repeated, since they can carry a code or a token.
+- On the SSE GET the refusal is emitted on =McpTransport::error= and the transport goes to =MCP_TRANSPORT_STATE_ERROR= without reconnecting: the same URL would be refused the same way on every attempt.
+- An SSE GET with no credential follows redirects as before.
+
 *** SSE Parsing
 - Lines may end =\r\n=, =\n= or =\r=; all three are accepted, and the
   blank line between them is what ends an event
@@ -234,7 +242,7 @@ transport = mcp_websocket_transport_new ("wss://mcp.example.com/ws");
 
 *** Configuration
 #+begin_src C
-/* Set authentication token (sent as Sec-WebSocket-Protocol or header) */
+/* Set authentication token (sent on the handshake as "Authorization: Bearer my-token") */
 mcp_websocket_transport_set_auth_token (transport, "my-token");
 
 /* Set origin header */
@@ -262,6 +270,9 @@ mcp_websocket_transport_set_max_reconnect_attempts (transport, 5);
 | =keepalive-interval=     | guint    | Ping interval in seconds (0 = disabled) |
 | =reconnect=              | gboolean | Auto-reconnect on disconnect            |
 | =max-reconnect-attempts= | gint     | Max reconnect attempts (-1 = unlimited) |
+
+*** Redirects
+With an =auth-token=, the handshake is sent with =SOUP_MESSAGE_NO_REDIRECT=, for the reason given under the HTTP transport. A handshake answered with a redirect fails the connect with an =MCP_ERROR_TRANSPORT_ERROR= naming the target's origin -- instead of libsoup's "did not accept the WebSocket handshake" -- and the transport does not reconnect.
 
 *** Custom SoupSession
 For advanced HTTP/proxy configuration:

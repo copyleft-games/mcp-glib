@@ -132,7 +132,8 @@ ifeq ($(TARGET_PLATFORM),windows)
                       $(TESTDIR)/test-http-server-transport.c $(TESTDIR)/test-websocket-server-transport.c \
                       $(TESTDIR)/test-server-transport-integration.c \
                       $(TESTDIR)/test-transport-mock.c $(TESTDIR)/test-integration.c \
-                      $(TESTDIR)/test-unix-socket-server.c
+                      $(TESTDIR)/test-unix-socket-server.c \
+                      $(TESTDIR)/test-redirects.c
     PLATFORM_CFLAGS := -DMCP_NO_LIBSOUP -DMCP_NO_STDIO_TRANSPORT
 else
     # Linux: SO with versioning, full feature set
@@ -197,6 +198,7 @@ DEPS        := $(OBJS:.o=.d)
 # introspection -- g-ir-scanner's C parser does not understand
 # g_autoptr() in a declaration and reports a syntax error on it.
 PRIVATE_HDRS := $(SRCDIR)/mcp-json-util.h \
+                $(SRCDIR)/mcp-redirect-util.h \
                 $(SRCDIR)/mcp-request-util.h \
                 $(SRCDIR)/mcp-listen-util.h \
                 $(SRCDIR)/mcp-backoff-util.h \

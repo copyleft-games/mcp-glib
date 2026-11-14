@@ -7,6 +7,7 @@
 #include "mcp-websocket-transport.h"
 #include "mcp-backoff-util.h"
 #include "mcp-error.h"
+#include "mcp-redirect-util.h"
 #undef MCP_COMPILATION
 
 #include <string.h>
@@ -276,6 +277,34 @@ websocket_connect_cb (GObject      *source,
 
     if (self->connection == NULL)
     {
+        g_autoptr(GError) refusal = NULL;
+
+        /*
+         * A handshake answered with a redirect it was not allowed to
+         * follow fails as "not a WebSocket", which hides the one thing
+         * to fix.  Say so instead -- and do not reconnect: the same URL
+         * would be refused the same way on every attempt.
+         */
+        if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+            refusal = mcp_redirect_check (self->handshake_message);
+        }
+
+        if (refusal != NULL)
+        {
+            g_message ("WebSocket connection refused: %s", refusal->message);
+            mcp_transport_emit_error (MCP_TRANSPORT (self), refusal);
+
+            if (self->connect_task != NULL)
+            {
+                g_task_return_error (self->connect_task, g_steal_pointer (&refusal));
+                g_clear_object (&self->connect_task);
+            }
+
+            set_state (self, MCP_TRANSPORT_STATE_ERROR);
+            return;
+        }
+
         if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         {
             g_warning ("WebSocket connection failed: %s", error->message);
@@ -345,6 +374,14 @@ start_websocket_connection (McpWebSocketTransport *self)
         g_autofree gchar *auth_value = NULL;
         auth_value = g_strdup_printf ("Bearer %s", self->auth_token);
         soup_message_headers_replace (headers, "Authorization", auth_value);
+
+        /*
+         * libsoup copies request headers onto a redirected message, and
+         * releases before 3.6.6 kept Authorization even when Location
+         * named another host.  A refused redirect is reported by
+         * websocket_connect_cb().
+         */
+        soup_message_add_flags (self->handshake_message, SOUP_MESSAGE_NO_REDIRECT);
     }
 
     /* Add origin header */

@@ -215,6 +215,7 @@ make test
 | `test-stdio-transport` | Framing, the line cap, and teardown with I/O in flight |
 | `test-http-sse` | HTTP/WebSocket: SSE streaming, per-instance event state, overlapping POSTs, host binding |
 | `test-backoff` | Reconnect backoff arithmetic |
+| `test-redirects` | A credentialed request never follows a redirect: the decision, then each transport against two loopback servers |
 | `test-deferred-tools` | Deferred tools over a real socket pair: answers later, progress, errors, cancellation, disconnect |
 
 **No test that passes `JsonNode`s between a mock server and a mock client

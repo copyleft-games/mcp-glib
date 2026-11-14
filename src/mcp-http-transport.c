@@ -6,6 +6,7 @@
  */
 #include "mcp-http-transport.h"
 #include "mcp-error.h"
+#include "mcp-redirect-util.h"
 #undef MCP_COMPILATION
 
 #include <string.h>
@@ -151,25 +152,50 @@ build_url (McpHttpTransport *self,
     }
 }
 
-static void
+/*
+ * Adds the bearer token and the session id, and marks a message that
+ * carries either one SOUP_MESSAGE_NO_REDIRECT.
+ *
+ * libsoup follows a 3xx by default and copies the request headers onto
+ * the redirected message.  Releases before 3.6.6 sent Authorization
+ * wherever Location pointed, another host included; every release still
+ * sends Mcp-Session-Id there, and the session id is a credential -- it
+ * is what lets a peer speak inside this session.  A refused redirect
+ * comes back from mcp_redirect_check() as an error naming the address
+ * to configure instead.
+ *
+ * Returns: %TRUE if @message carries a credential
+ */
+static gboolean
 add_auth_header (McpHttpTransport *self,
                  SoupMessage      *message)
 {
     SoupMessageHeaders *headers;
+    gboolean credentialed;
 
     headers = soup_message_get_request_headers (message);
+    credentialed = FALSE;
 
     if (self->auth_token != NULL && self->auth_token[0] != '\0')
     {
         g_autofree gchar *auth_value = NULL;
         auth_value = g_strdup_printf ("Bearer %s", self->auth_token);
         soup_message_headers_replace (headers, "Authorization", auth_value);
+        credentialed = TRUE;
     }
 
     if (self->session_id != NULL && self->session_id[0] != '\0')
     {
         soup_message_headers_replace (headers, "Mcp-Session-Id", self->session_id);
+        credentialed = TRUE;
     }
+
+    if (credentialed)
+    {
+        soup_message_add_flags (message, SOUP_MESSAGE_NO_REDIRECT);
+    }
+
+    return credentialed;
 }
 
 /* SSE parsing */
@@ -402,6 +428,26 @@ sse_send_cb (GObject      *source,
     }
 
     status = soup_message_get_status (self->sse_message);
+
+    /*
+     * A redirect the stream was not allowed to follow is a configuration
+     * error, not a network one: reconnecting would ask the same URL and
+     * be refused the same way, forever, so this stops here.
+     */
+    {
+        g_autoptr(GError) refusal = NULL;
+
+        refusal = mcp_redirect_check (self->sse_message);
+        if (refusal != NULL)
+        {
+            g_message ("SSE connection refused: %s", refusal->message);
+            mcp_transport_emit_error (MCP_TRANSPORT (self), refusal);
+            stop_sse_connection (self);
+            set_state (self, MCP_TRANSPORT_STATE_ERROR);
+            return;
+        }
+    }
+
     if (status != SOUP_STATUS_OK)
     {
         g_autoptr(GError) http_error = NULL;
@@ -650,6 +696,7 @@ typedef struct
     GTask *task;
     JsonNode *message;
     SoupMessage *soup_message;
+    gboolean credentialed;   /* carries a token or a session id */
 } SendMessageData;
 
 static void
@@ -684,7 +731,32 @@ post_send_cb (GObject      *source,
 
     status = soup_message_get_status (message);
 
-    if (status >= 400)
+    /*
+     * Checked before the status range: with SOUP_MESSAGE_NO_REDIRECT a
+     * 3xx is the final answer, and below 400 it would otherwise be taken
+     * for success while the message was never delivered.
+     */
+    if (data->credentialed)
+    {
+        error = mcp_redirect_check (message);
+    }
+
+    if (error == NULL && SOUP_STATUS_IS_REDIRECTION (status))
+    {
+        /* Nothing credentialed rode on it, but nothing was delivered. */
+        error = g_error_new (MCP_ERROR, MCP_ERROR_TRANSPORT_ERROR,
+                             "HTTP POST was answered %u, a redirect, and "
+                             "the message was not delivered -- a JSON-RPC "
+                             "POST is never repeated across a redirect; "
+                             "configure the address it names instead",
+                             status);
+    }
+
+    if (error != NULL)
+    {
+        g_task_return_error (data->task, g_steal_pointer (&error));
+    }
+    else if (status >= 400)
     {
         g_task_return_new_error (data->task, MCP_ERROR, MCP_ERROR_TRANSPORT_ERROR,
                                   "HTTP POST failed with status %u: %s",
@@ -745,6 +817,7 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     SoupMessage *soup_msg;
     SoupMessageHeaders *headers;
     GBytes *body;
+    gboolean credentialed;
 
     task = g_task_new (self, cancellable, callback, user_data);
     g_task_set_source_tag (task, mcp_http_transport_send_message_async);
@@ -780,7 +853,15 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     soup_message_headers_replace (headers, "Content-Type", "application/json");
     soup_message_headers_replace (headers, "Accept", "application/json, text/event-stream");
 
-    add_auth_header (self, soup_msg);
+    credentialed = add_auth_header (self, soup_msg);
+
+    /*
+     * A POST never follows a redirect, credential or not: libsoup turns
+     * one answered 301/302/303 into a GET without the body, and does not
+     * follow a 307/308 at all -- either way the message is not
+     * delivered, and post_send_cb() would have reported success.
+     */
+    soup_message_add_flags (soup_msg, SOUP_MESSAGE_NO_REDIRECT);
 
     body = g_bytes_new (json_data, strlen (json_data));
     soup_message_set_request_body_from_bytes (soup_msg, "application/json", body);
@@ -791,6 +872,7 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     data->task = task;
     data->message = json_node_copy (message);
     data->soup_message = soup_msg;   /* takes the reference */
+    data->credentialed = credentialed;
 
     soup_session_send_and_read_async (self->session,
                                        soup_msg,
