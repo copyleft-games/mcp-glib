@@ -91,7 +91,7 @@ endif
 #=============================================================================
 
 PROJECT     := mcp-glib
-VERSION     := 1.0.1
+VERSION     := 1.0.2
 API_VERSION := 1.0
 LICENSE     := AGPLv3
 
