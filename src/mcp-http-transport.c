@@ -153,8 +153,22 @@ build_url (McpHttpTransport *self,
 }
 
 /*
+ * Whether a request from @self will carry a credential: the bearer token
+ * or the session id.  Asked before the message is built, so
+ * mcp_redirect_message_new() can set the flag up front.
+ */
+static gboolean
+carries_credentials (McpHttpTransport *self)
+{
+    return (self->auth_token != NULL && self->auth_token[0] != '\0') ||
+           (self->session_id != NULL && self->session_id[0] != '\0');
+}
+
+/*
  * Adds the bearer token and the session id, and marks a message that
- * carries either one SOUP_MESSAGE_NO_REDIRECT.
+ * carries either one SOUP_MESSAGE_NO_REDIRECT.  The message was already
+ * built with the flag when carries_credentials() said so; setting it
+ * again here covers a session id that arrived in between.
  *
  * libsoup follows a 3xx by default and copies the request headers onto
  * the redirected message.  Releases before 3.6.6 sent Authorization
@@ -506,7 +520,11 @@ start_sse_connection (McpHttpTransport *self)
 
     url = build_url (self, self->sse_endpoint);
 
-    self->sse_message = soup_message_new ("GET", url);
+    /* Credentialed, it never follows; keyless, it follows as before. */
+    self->sse_message = mcp_redirect_message_new ("GET", url,
+                                                  carries_credentials (self)
+                                                  ? MCP_REDIRECT_NEVER
+                                                  : MCP_REDIRECT_FOLLOW);
     if (self->sse_message == NULL)
     {
         g_autoptr(GError) error = NULL;
@@ -840,7 +858,13 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     url = build_url (self, self->post_endpoint);
 
     /* Create POST request */
-    soup_msg = soup_message_new ("POST", url);
+    /*
+     * A POST never follows a redirect, credential or not: libsoup turns
+     * one answered 301/302/303 into a GET without the body, and does not
+     * follow a 307/308 at all -- either way the message is not
+     * delivered, and post_send_cb() would have reported success.
+     */
+    soup_msg = mcp_redirect_message_new ("POST", url, MCP_REDIRECT_NEVER);
     if (soup_msg == NULL)
     {
         g_task_return_new_error (task, MCP_ERROR, MCP_ERROR_TRANSPORT_ERROR,
@@ -854,14 +878,6 @@ mcp_http_transport_send_message_async (McpTransport        *transport,
     soup_message_headers_replace (headers, "Accept", "application/json, text/event-stream");
 
     credentialed = add_auth_header (self, soup_msg);
-
-    /*
-     * A POST never follows a redirect, credential or not: libsoup turns
-     * one answered 301/302/303 into a GET without the body, and does not
-     * follow a 307/308 at all -- either way the message is not
-     * delivered, and post_send_cb() would have reported success.
-     */
-    soup_message_add_flags (soup_msg, SOUP_MESSAGE_NO_REDIRECT);
 
     body = g_bytes_new (json_data, strlen (json_data));
     soup_message_set_request_body_from_bytes (soup_msg, "application/json", body);

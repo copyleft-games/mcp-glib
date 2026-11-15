@@ -347,7 +347,17 @@ start_websocket_connection (McpWebSocketTransport *self)
 {
     SoupMessageHeaders *headers;
 
-    self->handshake_message = soup_message_new ("GET", self->uri);
+    /*
+     * With an auth token the handshake never follows a redirect: libsoup
+     * copies request headers onto a redirected message, and releases
+     * before 3.6.6 kept Authorization even when Location named another
+     * host.  A refused redirect is reported by websocket_connect_cb().
+     */
+    self->handshake_message = mcp_redirect_message_new (
+        "GET", self->uri,
+        (self->auth_token != NULL && self->auth_token[0] != '\0')
+        ? MCP_REDIRECT_NEVER
+        : MCP_REDIRECT_FOLLOW);
     if (self->handshake_message == NULL)
     {
         g_autoptr(GError) error = NULL;
@@ -374,14 +384,6 @@ start_websocket_connection (McpWebSocketTransport *self)
         g_autofree gchar *auth_value = NULL;
         auth_value = g_strdup_printf ("Bearer %s", self->auth_token);
         soup_message_headers_replace (headers, "Authorization", auth_value);
-
-        /*
-         * libsoup copies request headers onto a redirected message, and
-         * releases before 3.6.6 kept Authorization even when Location
-         * named another host.  A refused redirect is reported by
-         * websocket_connect_cb().
-         */
-        soup_message_add_flags (self->handshake_message, SOUP_MESSAGE_NO_REDIRECT);
     }
 
     /* Add origin header */

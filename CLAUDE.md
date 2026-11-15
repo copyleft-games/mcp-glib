@@ -215,7 +215,7 @@ make test
 | `test-stdio-transport` | Framing, the line cap, and teardown with I/O in flight |
 | `test-http-sse` | HTTP/WebSocket: SSE streaming, per-instance event state, overlapping POSTs, host binding |
 | `test-backoff` | Reconnect backoff arithmetic |
-| `test-redirects` | A credentialed request never follows a redirect: the decision, then each transport against two loopback servers |
+| `test-redirects` | A credentialed request never follows a redirect: the decision, the constructor's policy, then each transport against two loopback servers |
 | `test-deferred-tools` | Deferred tools over a real socket pair: answers later, progress, errors, cancellation, disconnect |
 
 **No test that passes `JsonNode`s between a mock server and a mock client
@@ -225,6 +225,23 @@ can see a reply that will not serialise**: `json_node_new
 moment a real transport wrote it out. `test-server-wire` runs every
 outbound frame through `JsonGenerator`, which is what a real transport
 does.
+
+### Outbound HTTP: never a bare `soup_message_new*()`
+
+Build every `SoupMessage` with `mcp_redirect_message_new()` from
+`src/mcp-redirect-util.h` and pass its `McpRedirectPolicy`:
+`MCP_REDIRECT_NEVER` (the zero value) for a request that will carry the
+auth token or the `Mcp-Session-Id`, and for every POST;
+`MCP_REDIRECT_FOLLOW` only for one that carries nothing (a keyless SSE GET
+or WebSocket handshake). The flag is set before the message is returned,
+so it cannot lose to a header added first. Turn a refused 3xx into an
+error with `mcp_redirect_check()`.
+
+`tests/check-http-constructors.sh` runs first in `make test` (also `make
+check-http-constructors`): it fails on a bare `soup_message_new*()` in
+`src/`, `tools/` or `examples/` outside `mcp-redirect-util.h`, after
+blanking comments and string literals, and its `--self-test` proves it
+still catches probes. `tests/` is not scanned (loopback servers).
 
 ## Example Programs
 

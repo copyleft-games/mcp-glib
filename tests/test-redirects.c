@@ -154,6 +154,41 @@ test_check_ignores_messages_that_may_follow (void)
     g_assert_null (mcp_redirect_check (NULL));
 }
 
+/*
+ * The constructor every transport goes through decides before any header
+ * is set: NEVER is the flag on the message it returns, FOLLOW is libsoup's
+ * default, and zero -- a forgotten argument -- is NEVER.
+ */
+static void
+test_message_new_applies_the_policy (void)
+{
+    g_autoptr(SoupMessage) never = NULL;
+    g_autoptr(SoupMessage) follow = NULL;
+    g_autoptr(SoupMessage) zero = NULL;
+
+    g_assert_cmpint (MCP_REDIRECT_NEVER, ==, 0);
+
+    never = mcp_redirect_message_new ("POST", "http://127.0.0.1:1/mcp",
+                                      MCP_REDIRECT_NEVER);
+    g_assert_nonnull (never);
+    g_assert_cmpstr (soup_message_get_method (never), ==, "POST");
+    g_assert_true ((soup_message_get_flags (never) & SOUP_MESSAGE_NO_REDIRECT) != 0);
+
+    follow = mcp_redirect_message_new ("GET", "http://127.0.0.1:1/sse",
+                                       MCP_REDIRECT_FOLLOW);
+    g_assert_nonnull (follow);
+    g_assert_true ((soup_message_get_flags (follow) & SOUP_MESSAGE_NO_REDIRECT) == 0);
+    g_assert_null (mcp_redirect_check (follow));
+
+    zero = mcp_redirect_message_new ("GET", "http://127.0.0.1:1/",
+                                     (McpRedirectPolicy) 0);
+    g_assert_true ((soup_message_get_flags (zero) & SOUP_MESSAGE_NO_REDIRECT) != 0);
+
+    /* An unparseable URL is NULL, as from soup_message_new(). */
+    g_assert_null (mcp_redirect_message_new ("GET", "not a url",
+                                             MCP_REDIRECT_FOLLOW));
+}
+
 /* ========================================================================== */
 /* Two loopback servers: one redirects, the other counts who arrives          */
 /* ========================================================================== */
@@ -626,6 +661,8 @@ main (gint   argc,
                      test_refusal_brackets_ipv6);
     g_test_add_func ("/mcp/redirects/check/ignores-messages-that-may-follow",
                      test_check_ignores_messages_that_may_follow);
+    g_test_add_func ("/mcp/redirects/message-new/applies-the-policy",
+                     test_message_new_applies_the_policy);
 
     g_test_add ("/mcp/redirects/http/post-with-token-does-not-follow",
                 Fixture, NULL, fixture_set_up,

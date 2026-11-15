@@ -4,7 +4,8 @@
  * Copyright (C) 2026 Copyleft Games
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
- * Internal helper.  `static inline`, so nothing new is exported.
+ * Internal helper.  `static inline`, so nothing new is exported.  Not
+ * installed and not scanned into the GIR.
  *
  * libsoup follows 301/302/303/307/308 by default and copies the request
  * headers onto the new message, so a bearer token or an Mcp-Session-Id
@@ -27,6 +28,64 @@
 #include "mcp-error.h"
 
 G_BEGIN_DECLS
+
+/*
+ * McpRedirectPolicy:
+ * @MCP_REDIRECT_NEVER: the request carries a credential (the auth token,
+ *   the Mcp-Session-Id) or is a POST that a redirect would silently fail
+ *   to deliver; it is sent with %SOUP_MESSAGE_NO_REDIRECT
+ * @MCP_REDIRECT_FOLLOW: the request carries nothing a redirect could leak;
+ *   libsoup follows a redirect as it would by default
+ *
+ * Whether a request may follow a redirect.  Zero is the safe value on
+ * purpose, so a zeroed field or a forgotten argument refuses rather than
+ * follows.
+ */
+typedef enum
+{
+    MCP_REDIRECT_NEVER = 0,
+    MCP_REDIRECT_FOLLOW
+} McpRedirectPolicy;
+
+/*
+ * mcp_redirect_message_new:
+ * @method: the HTTP method
+ * @url: the URL to send it to
+ * @policy: whether the request may follow a redirect
+ *
+ * The only way mcp-glib builds a #SoupMessage: soup_message_new(), with
+ * %SOUP_MESSAGE_NO_REDIRECT set before it is returned when @policy is
+ * %MCP_REDIRECT_NEVER, so no caller can add a credential first and the
+ * flag later -- or forget it.  tests/check-http-constructors.sh fails
+ * `make test` on a bare soup_message_new*() anywhere else in src/,
+ * tools/ or examples/.
+ *
+ * A refused redirect comes back as an ordinary 3xx; mcp_redirect_check()
+ * turns it into an error naming what to configure instead.
+ *
+ * Returns: (transfer full) (nullable): the message, or %NULL when @url is
+ *   not one libsoup can parse
+ */
+static inline SoupMessage *
+mcp_redirect_message_new (const gchar       *method,
+                          const gchar       *url,
+                          McpRedirectPolicy  policy)
+{
+    SoupMessage *message;
+
+    g_return_val_if_fail (method != NULL, NULL);
+    g_return_val_if_fail (url != NULL, NULL);
+
+    /* The one place in mcp-glib a bare constructor is allowed. */
+    message = soup_message_new (method, url);
+    if (message != NULL && policy != MCP_REDIRECT_FOLLOW)
+    {
+        /* An unknown value is treated as the safe one. */
+        soup_message_add_flags (message, SOUP_MESSAGE_NO_REDIRECT);
+    }
+
+    return message;
+}
 
 /*
  * mcp_redirect_status_is_followable:

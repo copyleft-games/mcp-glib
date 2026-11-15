@@ -299,7 +299,17 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 # Test Targets
 #=============================================================================
 
-test: platform-check $(TEST_BINS)
+# Every SoupMessage is built by mcp_redirect_message_new()
+# (src/mcp-redirect-util.h), so each request has said whether it may
+# follow a redirect before any header -- the auth token, the session id
+# -- is on it.  The self-test proves the check still catches a bare
+# constructor before it is trusted to pass the tree.
+.PHONY: check-http-constructors
+check-http-constructors:
+	@bash tests/check-http-constructors.sh --self-test
+	@bash tests/check-http-constructors.sh
+
+test: platform-check check-http-constructors $(TEST_BINS)
 ifeq ($(TARGET_PLATFORM),windows)
 	@echo "Cross-compiled tests cannot be run on Linux. Use Wine or copy to Windows."
 	@echo "Test binaries built in $(BUILDDIR)/"

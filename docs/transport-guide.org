@@ -216,6 +216,13 @@ A request that carries a credential -- the =auth-token=, or the =Mcp-Session-Id=
 - A refused redirect is an =MCP_ERROR_TRANSPORT_ERROR= naming what to configure instead: the target's origin (=scheme://host[:port]=) when it is another server, the path when it is the same one. The path and query of another host's =Location= are never repeated, since they can carry a code or a token.
 - On the SSE GET the refusal is emitted on =McpTransport::error= and the transport goes to =MCP_TRANSPORT_STATE_ERROR= without reconnecting: the same URL would be refused the same way on every attempt.
 - An SSE GET with no credential follows redirects as before.
+- The decision is made when the message is built, not after: every =SoupMessage= comes from =mcp_redirect_message_new()= (=src/mcp-redirect-util.h=, internal), which takes an =McpRedirectPolicy= -- =MCP_REDIRECT_NEVER=, the zero value, for a credential or a POST; =MCP_REDIRECT_FOLLOW= for a request with nothing to leak -- and sets =SOUP_MESSAGE_NO_REDIRECT= before any header is on it. =tests/check-http-constructors.sh=, run by =make test=, fails the build on a bare =soup_message_new*()= anywhere else in =src/=, =tools/= or =examples/=.
+
+| Request                | Policy                                       |
+|------------------------+----------------------------------------------|
+| HTTP POST              | never, credential or not                     |
+| HTTP SSE GET           | never with an =auth-token= or a session id; follow without |
+| WebSocket handshake    | never with an =auth-token=; follow without   |
 
 *** SSE Parsing
 - Lines may end =\r\n=, =\n= or =\r=; all three are accepted, and the
